@@ -4,11 +4,27 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      - SYMBOL=BTC
     volumes:
       - ./btc_model_wf.pt:/app/btc_model_wf.pt
       - ./btc_scaler_wf.pkl:/app/btc_scaler_wf.pkl
-      - ./bot_state.json:/app/bot_state.json
-      - ./bot.log:/app/bot.log
+      - ./btc_state.json:/app/btc_state.json
+      - ./btc_bot.log:/app/btc_bot.log
+
+  eth-bot:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - SYMBOL=ETH
+      - LONG_FLAT_ONLY=true
+    volumes:
+      - ./eth_model_wf.pt:/app/eth_model_wf.pt
+      - ./eth_scaler_wf.pkl:/app/eth_scaler_wf.pkl
+      - ./eth_state.json:/app/eth_state.json
+      - ./eth_bot.log:/app/eth_bot.log
 
   coin-monitor:
     build: .
