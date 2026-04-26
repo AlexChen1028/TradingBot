@@ -269,7 +269,8 @@ def merge_context(btc: pd.DataFrame,
 
 
 # ── 7. Feature engineering ────────────────────────────────────────────────────
-def add_features(df: pd.DataFrame, ref_btc: pd.DataFrame = None) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, ref_btc: pd.DataFrame = None,
+                 target_ahead: int = TARGET_AHEAD, min_move: float = 0.0) -> pd.DataFrame:
     c, o, h, l = df['close'], df['open'], df['high'], df['low']
 
     # ── BTC technical ──────────────────────────────────────────────────────
@@ -385,8 +386,15 @@ def add_features(df: pd.DataFrame, ref_btc: pd.DataFrame = None) -> pd.DataFrame
         df['btc_ret_4h']        = np.log(btc_s / btc_s.shift(4))
 
     # ── Target ────────────────────────────────────────────────────────────
-    df['target'] = (c.shift(-TARGET_AHEAD) > c).astype(float)
-    df.loc[df.index[-TARGET_AHEAD:], 'target'] = np.nan
+    future_c = c.shift(-target_ahead)
+    if min_move > 0:
+        # Only label clear up/down moves; small moves become NaN (excluded from training)
+        up   = future_c > c * (1 + min_move)
+        down = future_c < c * (1 - min_move)
+        df['target'] = np.where(up, 1.0, np.where(down, 0.0, np.nan))
+    else:
+        df['target'] = (future_c > c).astype(float)
+    df.loc[df.index[-target_ahead:], 'target'] = np.nan
 
     return df
 

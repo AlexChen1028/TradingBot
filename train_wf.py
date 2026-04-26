@@ -67,6 +67,12 @@ parser.add_argument('--nhead',        type=int,   default=8)
 parser.add_argument('--n_layers',     type=int,   default=3)
 parser.add_argument('--seq_len',      type=int,   default=60)
 parser.add_argument('--dropout',      type=float, default=0.2)
+parser.add_argument('--target_ahead', type=int,   default=6,
+                    help='Hours ahead to predict (default 6)')
+parser.add_argument('--min_move',     type=float, default=0.0,
+                    help='Min price move to count as signal (e.g. 0.01 = 1%%)')
+parser.add_argument('--balance_classes', action='store_true',
+                    help='Oversample minority class to balance up/down labels')
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -161,10 +167,23 @@ def make_sequences(df_slice: pd.DataFrame, scaler=None, fit_scaler=True,
         y.append(raw_y[i - 1])
         w.append(raw_w[i - 1])
 
-    return (np.array(X, np.float32),
-            np.array(y, np.float32),
-            np.array(w, np.float32),
-            scaler)
+    X = np.array(X, np.float32)
+    y = np.array(y, np.float32)
+    w = np.array(w, np.float32)
+
+    # Oversample minority class so up/down counts are equal
+    if fit_scaler and getattr(args, 'balance_classes', False):
+        idx_up   = np.where(y == 1)[0]
+        idx_down = np.where(y == 0)[0]
+        n_min    = min(len(idx_up), len(idx_down))
+        if n_min > 0 and len(idx_up) != len(idx_down):
+            rng      = np.random.default_rng(42)
+            idx_up   = rng.choice(idx_up,   n_min, replace=False)
+            idx_down = rng.choice(idx_down, n_min, replace=False)
+            idx      = np.sort(np.concatenate([idx_up, idx_down]))
+            X, y, w  = X[idx], y[idx], w[idx]
+
+    return X, y, w, scaler
 
 
 # ── Train one window ──────────────────────────────────────────────────────────
@@ -384,7 +403,9 @@ def main():
         print("[Cross-asset] Fetching BTC/USDT as reference ...")
         ref_btc = fetch_btc(symbol='BTC/USDT', since_iso=f"{args.since}T00:00:00Z")
 
-    df = add_features(df, ref_btc=ref_btc)
+    df = add_features(df, ref_btc=ref_btc,
+                      target_ahead=args.target_ahead,
+                      min_move=args.min_move)
     df = df.replace([np.inf, -np.inf], np.nan).reset_index(drop=True)
 
     feature_cols = FEATURE_COLS + (ETH_EXTRA_COLS if ref_btc is not None else [])
