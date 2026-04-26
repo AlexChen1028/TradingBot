@@ -50,13 +50,14 @@ SCALER_PATH = f'{_COIN.lower()}_scaler_wf.pkl'
 STATE_FILE  = f'{_COIN.lower()}_state.json'
 LOG_FILE    = f'{_COIN.lower()}_bot.log'
 
-MAX_POS_PCT    = 0.20
+MAX_POS_PCT    = float(os.getenv('MAX_POS_PCT', '0.05'))  # 保證金佔餘額比例
 MIN_HOLD_HOURS = 6
 THRESHOLD      = 0.50
 LOOKBACK_DAYS  = 60
 INTERVAL_SECS  = 3600
-STOP_LOSS_PCT  = 0.05
-LEVERAGE       = int(os.getenv('LEVERAGE', '1'))   # 逐倉槓桿倍數（預設 1x）
+LEVERAGE       = int(os.getenv('LEVERAGE', '20'))
+SL_PCT         = float(os.getenv('SL_PCT', '0.03'))   # 止損：價格偏離 3%
+TP_PCT         = float(os.getenv('TP_PCT', '0.05'))   # 止盈：價格偏離 5%
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -116,6 +117,8 @@ _DEFAULT_STATE = {
     'amount_coin':  0.0,
     'entry_time':   None,
     'entry_price':  None,
+    'sl_order_id':  None,
+    'tp_order_id':  None,
 }
 
 def load_state() -> dict:
@@ -208,37 +211,67 @@ def get_balance(exchange) -> float:
 def get_price(exchange) -> float:
     return float(exchange.fetch_ticker(SYMBOL)['last'])
 
-def check_stop_loss(exchange, state: dict) -> bool:
-    if state['direction'] == 0 or not state.get('entry_price'):
+def check_sltp_triggered(exchange, state: dict, next_direction: int = 0) -> bool:
+    """偵測交易所止損/止盈是否已觸發（倉位被清零）。"""
+    if state['direction'] == 0:
         return False
-    price   = get_price(exchange)
-    ep      = state['entry_price']
-    pnl_pct = (price - ep) / ep * state['direction']
-    if pnl_pct < -STOP_LOSS_PCT:
-        side_str = 'LONG' if state['direction'] == 1 else 'SHORT'
-        msg = (f"[{_COIN}] STOP-LOSS on {side_str} | "
-               f"entry={ep:,.2f}  now={price:,.2f}  loss={pnl_pct*100:+.2f}%")
-        log.warning(msg)
-        tg_send(f"🚨 {msg}")
-        close_position(exchange, state)
+    try:
+        positions = exchange.fetch_positions([SYMBOL])
+        for pos in positions:
+            if pos.get('symbol') == SYMBOL and abs(pos.get('contracts') or 0) > 0:
+                return False  # 倉位仍存在
+        # 倉位已清零 → 被止損或止盈
+        ep        = state.get('entry_price') or 0
+        cur_price = get_price(exchange)
+        side      = 'LONG' if state['direction'] == 1 else 'SHORT'
+        if ep:
+            price_pct = (cur_price - ep) / ep * state['direction']
+            trigger   = '🎯 止盈' if price_pct > 0 else '🛑 止損'
+            pnl_pct   = price_pct * LEVERAGE * 100
+            amt       = state.get('amount_coin', 0)
+            pnl_usdt  = amt * (cur_price - ep) * state['direction']
+            next_label = {1: '🟢 做多', -1: '🔴 做空', 0: '⚪ 空倉'}[next_direction]
+            msg = (f"[{_COIN}] {trigger} {side} 平倉\n"
+                   f"進場：{ep:,.2f} → 現價：{cur_price:,.2f}\n"
+                   f"保證金盈虧：{pnl_pct:+.1f}%  ({pnl_usdt:+.2f} U)\n"
+                   f"下一單：{next_label}")
+        else:
+            msg = f"[{_COIN}] SL/TP triggered on {side}"
+        log.info(msg)
+        tg_send(f"⚡ {msg}")
         return True
-    return False
+    except Exception as e:
+        log.warning(f"check_sltp_triggered error: {e}")
+        return False
+
+def cancel_sltp(exchange, state: dict):
+    for key in ('sl_order_id', 'tp_order_id'):
+        oid = state.get(key)
+        if oid:
+            try:
+                exchange.cancel_order(oid, SYMBOL)
+            except Exception:
+                pass
 
 def close_position(exchange, state: dict):
     if state['direction'] == 0 or state['amount_coin'] == 0:
         return
+    cancel_sltp(exchange, state)
     amt      = state['amount_coin']
     price    = get_price(exchange)
     ep       = state.get('entry_price') or price
-    pnl_pct  = (price - ep) / ep * state['direction'] * 100
-    side_str = 'LONG' if state['direction'] == 1 else 'SHORT'
+    price_pct = (price - ep) / ep * state['direction'] * 100
+    pnl_pct   = price_pct * LEVERAGE
+    side_str  = 'LONG' if state['direction'] == 1 else 'SHORT'
     try:
         params = {'reduceOnly': True}
         if state['direction'] == 1:
             exchange.create_market_sell_order(SYMBOL, amt, params=params)
         else:
             exchange.create_market_buy_order(SYMBOL, amt, params=params)
-        msg = f"[{_COIN}] CLOSED {side_str} | {amt} {_COIN} | PnL {pnl_pct:+.2f}%"
+        pnl_usdt = amt * (price - ep) * state['direction']
+        msg = (f"[{_COIN}] CLOSED {side_str} | {amt} {_COIN}\n"
+               f"保證金盈虧：{pnl_pct:+.2f}%  ({pnl_usdt:+.2f} U)")
         log.info(msg)
         tg_send(f"🔒 {msg}")
     except Exception as e:
@@ -246,13 +279,13 @@ def close_position(exchange, state: dict):
 
 def open_position(exchange, direction: int, balance: float):
     if direction == 0:
-        return 0.0, 0.0
+        return 0.0, 0.0, None, None
     price    = get_price(exchange)
-    usdt     = balance * MAX_POS_PCT
-    amount   = max(round(usdt / price, 4), 0.001)
+    margin   = balance * MAX_POS_PCT
+    amount   = max(round(margin * LEVERAGE / price, 4), 0.001)
     side_str = 'LONG' if direction == 1 else 'SHORT'
+    sl_id = tp_id = None
     try:
-        # 切換逐倉模式並設定槓桿
         try:
             exchange.set_margin_mode('isolated', SYMBOL)
             exchange.set_leverage(LEVERAGE, SYMBOL, params={'marginMode': 'isolated'})
@@ -263,14 +296,35 @@ def open_position(exchange, direction: int, balance: float):
             exchange.create_market_buy_order(SYMBOL, amount)
         else:
             exchange.create_market_sell_order(SYMBOL, amount)
-        msg = (f"[{_COIN}] OPENED {side_str} | {amount} {_COIN} @ ~{price:,.2f} USDT "
-               f"(${usdt:,.0f} = {MAX_POS_PCT*100:.0f}% balance)")
+
+        sl_price = round(price * (1 - SL_PCT) if direction == 1 else price * (1 + SL_PCT), 2)
+        tp_price = round(price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 2)
+        sl_side  = 'sell' if direction == 1 else 'buy'
+
+        try:
+            sl_order = exchange.create_order(SYMBOL, 'stop_market', sl_side, amount, None, {
+                'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            sl_id = sl_order['id']
+        except Exception as e:
+            log.warning(f"SL order failed: {e}")
+
+        try:
+            tp_order = exchange.create_order(SYMBOL, 'take_profit_market', sl_side, amount, None, {
+                'stopPrice': tp_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            tp_id = tp_order['id']
+        except Exception as e:
+            log.warning(f"TP order failed: {e}")
+
+        msg = (f"[{_COIN}] OPENED {side_str} {LEVERAGE}x | {amount} {_COIN} @ ~{price:,.2f} "
+               f"| SL {sl_price:,.2f} ({SL_PCT*100:.0f}%) | TP {tp_price:,.2f} ({TP_PCT*100:.0f}%)")
         log.info(msg)
         tg_send(f"{'🟢' if direction == 1 else '🔴'} {msg}")
-        return amount, price
+        return amount, price, sl_id, tp_id
     except Exception as e:
         log.error(f"Failed to open position: {e}")
-        return 0.0, price
+        return 0.0, price, None, None
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -326,10 +380,27 @@ def main():
             log.info(f"Signal  : {dir_label}  (prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)")
             explain_prediction(model, scaler, df, feature_cols, seq_len)
 
-            if check_stop_loss(exchange, state):
+            # 1. 偵測交易所 SL/TP 是否已觸發
+            if check_sltp_triggered(exchange, state, next_direction=direction):
+                prev_dir = state['direction']
                 state.update(_DEFAULT_STATE.copy())
                 save_state(state)
+                # 立即根據最新信號開下一單
+                if direction != 0:
+                    balance = get_balance(exchange)
+                    log.info(f"SL/TP triggered — immediately re-entering {dir_label}")
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
+                    state.update({
+                        'direction':   direction,
+                        'amount_coin': amt,
+                        'entry_time':  now.isoformat(),
+                        'entry_price': price,
+                        'sl_order_id': sl_id,
+                        'tp_order_id': tp_id,
+                    })
+                    save_state(state)
 
+            # 2. Min-hold 鎖倉檢查
             locked = False
             if state['direction'] != 0 and state.get('entry_time'):
                 held_h = (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
@@ -339,6 +410,7 @@ def main():
                     log.info("Min-hold active — maintaining current position")
                     locked = True
 
+            # 3. 執行信號
             if not locked and direction != state['direction']:
                 balance = get_balance(exchange)
                 log.info(f"Balance : {balance:,.2f} USDT")
@@ -350,12 +422,14 @@ def main():
                     time.sleep(1)
 
                 if direction != 0:
-                    amt, price = open_position(exchange, direction, balance)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
                         'entry_time':  now.isoformat(),
                         'entry_price': price,
+                        'sl_order_id': sl_id,
+                        'tp_order_id': tp_id,
                     })
                     save_state(state)
                 else:
@@ -372,17 +446,19 @@ def main():
                 if state['direction'] != 0 and state.get('entry_price'):
                     ep      = state['entry_price']
                     amt     = state['amount_coin']
-                    pnl_pct = (cur_price - ep) / ep * state['direction'] * 100
-                    held_h  = (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
+                    price_pct = (cur_price - ep) / ep * state['direction'] * 100
+                    pnl_pct   = price_pct * LEVERAGE
+                    held_h    = (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
                     dir_emoji = '🟢 LONG' if state['direction'] == 1 else '🔴 SHORT'
                     tg_send(
                         f"📋 <b>[{_COIN}] 每小時持倉報告</b>\n"
                         f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                        f"方向：{dir_emoji}\n"
+                        f"方向：{dir_emoji} {LEVERAGE}x 逐倉\n"
                         f"數量：{amt} {_COIN}\n"
                         f"進場價：{ep:,.2f} USDT\n"
                         f"現價：{cur_price:,.2f} USDT\n"
-                        f"未實現盈虧：{pnl_pct:+.2f}%\n"
+                        f"價格變動：{price_pct:+.2f}%\n"
+                        f"保證金盈虧：{pnl_pct:+.2f}%\n"
                         f"持倉時間：{held_h:.1f} 小時\n"
                         f"帳戶餘額：{balance:,.2f} USDT"
                     )
