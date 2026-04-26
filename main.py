@@ -56,9 +56,12 @@ THRESHOLD      = 0.50
 LOOKBACK_DAYS  = 60
 INTERVAL_SECS  = 3600
 LEVERAGE       = int(os.getenv('LEVERAGE', '20'))
-SL_PCT         = float(os.getenv('SL_PCT', '0.03'))   # 止損：價格偏離 3%
-TP_PCT         = float(os.getenv('TP_PCT', '0.05'))   # 止盈：價格偏離 5%
+SL_PCT         = float(os.getenv('SL_PCT', '0.03'))    # 固定止損距離 3%（追蹤止損模式下為初始距離）
+TP_PCT         = float(os.getenv('TP_PCT', '0.05'))    # 止盈距離 5%
+TRAILING_SL    = os.getenv('TRAILING_SL', 'true').lower() == 'true'  # 是否用追蹤止損
 MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：20%
+DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
+CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -217,6 +220,43 @@ def get_balance(exchange) -> float:
 def get_price(exchange) -> float:
     return float(exchange.fetch_ticker(SYMBOL)['last'])
 
+
+# ── 市場狀態偵測 ──────────────────────────────────────────────────────────────
+def detect_regime(df: pd.DataFrame) -> str:
+    """
+    返回 'trending'（趨勢市）/ 'ranging'（震盪市）/ 'neutral'。
+    使用 ATR 比率：近期 ATR 相對於 50 根均值。
+    """
+    try:
+        h, l, c = df['high'], df['low'], df['close']
+        tr  = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean()
+        if len(atr.dropna()) < 50:
+            return 'neutral'
+        ratio = atr.iloc[-1] / atr.iloc[-50:].mean()
+        if ratio > 1.3:
+            return 'trending'
+        elif ratio < 0.7:
+            return 'ranging'
+        return 'neutral'
+    except Exception:
+        return 'neutral'
+
+
+# ── BTC/ETH 相關性保護 ────────────────────────────────────────────────────────
+def get_correlated_direction() -> int:
+    """讀取相關幣種的倉位方向，BTC 讀 ETH，ETH 讀 BTC。"""
+    if not CORR_PROTECT:
+        return 0
+    other = 'eth' if _COIN == 'BTC' else 'btc'
+    try:
+        p = Path(f'{other}_state.json')
+        if p.exists():
+            return json.loads(p.read_text()).get('direction', 0)
+    except Exception:
+        pass
+    return 0
+
 def check_preemptive_reversal(exchange, state: dict, model_direction: int) -> bool:
     """
     若模型信號已反轉，且目前虧損超過 SL 距離的一半，
@@ -309,14 +349,27 @@ def close_position(exchange, state: dict):
     except Exception as e:
         log.error(f"Failed to close position: {e}")
 
-def open_position(exchange, direction: int, balance: float):
+def open_position(exchange, direction: int, balance: float, regime: str = 'neutral'):
     if direction == 0:
         return 0.0, 0.0, None, None
+
+    # 相關性保護：相關幣種同方向時倉位減半
+    corr_dir  = get_correlated_direction()
+    pos_scale = 0.5 if (corr_dir == direction and corr_dir != 0) else 1.0
+    if pos_scale < 1.0:
+        log.info(f"Correlation protection: same direction as correlated coin, scaling to 50%")
+
+    # 震盪市倉位減半
+    if regime == 'ranging':
+        pos_scale *= 0.5
+        log.info("Ranging market detected: scaling position to 50%")
+
     price    = get_price(exchange)
-    margin   = balance * MAX_POS_PCT
+    margin   = balance * MAX_POS_PCT * pos_scale
     amount   = max(round(margin * LEVERAGE / price, 4), 0.001)
     side_str = 'LONG' if direction == 1 else 'SHORT'
     sl_id = tp_id = None
+
     try:
         try:
             exchange.set_margin_mode('isolated', SYMBOL)
@@ -329,19 +382,28 @@ def open_position(exchange, direction: int, balance: float):
         else:
             exchange.create_market_sell_order(SYMBOL, amount)
 
-        sl_price = round(price * (1 - SL_PCT) if direction == 1 else price * (1 + SL_PCT), 2)
-        tp_price = round(price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 2)
-        sl_side  = 'sell' if direction == 1 else 'buy'
+        sl_side = 'sell' if direction == 1 else 'buy'
 
+        # 追蹤止損 或 固定止損
         try:
-            sl_order = exchange.create_order(SYMBOL, 'stop_market', sl_side, amount, None, {
-                'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
-            })
+            if TRAILING_SL:
+                sl_order = exchange.create_order(SYMBOL, 'trailing_stop_market', sl_side, amount, None, {
+                    'callbackRate':   SL_PCT * 100,   # 百分比，e.g. 3.0
+                    'closePosition':  True,
+                    'workingType':    'MARK_PRICE',
+                })
+            else:
+                sl_price = round(price * (1 - SL_PCT) if direction == 1 else price * (1 + SL_PCT), 2)
+                sl_order = exchange.create_order(SYMBOL, 'stop_market', sl_side, amount, None, {
+                    'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                })
             sl_id = sl_order['id']
         except Exception as e:
             log.warning(f"SL order failed: {e}")
 
+        # 固定止盈
         try:
+            tp_price = round(price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 2)
             tp_order = exchange.create_order(SYMBOL, 'take_profit_market', sl_side, amount, None, {
                 'stopPrice': tp_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
             })
@@ -349,8 +411,9 @@ def open_position(exchange, direction: int, balance: float):
         except Exception as e:
             log.warning(f"TP order failed: {e}")
 
+        sl_desc = f"Trailing {SL_PCT*100:.0f}%" if TRAILING_SL else f"SL {SL_PCT*100:.0f}%"
         msg = (f"[{_COIN}] OPENED {side_str} {LEVERAGE}x | {amount} {_COIN} @ ~{price:,.2f} "
-               f"| SL {sl_price:,.2f} ({SL_PCT*100:.0f}%) | TP {tp_price:,.2f} ({TP_PCT*100:.0f}%)")
+               f"| {sl_desc} | TP {TP_PCT*100:.0f}% | Regime: {regime}")
         log.info(msg)
         tg_send(f"{'🟢' if direction == 1 else '🔴'} {msg}")
         return amount, price, sl_id, tp_id
@@ -444,10 +507,13 @@ def main():
         'enableRateLimit': True,
         'options': {'defaultType': 'future'},
     })
-    exchange.enable_demo_trading(True)
+    if DEMO_MODE:
+        exchange.enable_demo_trading(True)
+        log.info("Exchange: Binance Futures (DEMO MODE)")
+    else:
+        log.warning("Exchange: Binance Futures ⚠️  LIVE MODE — real money!")
+        tg_send(f"⚠️ [{_COIN}] Bot 啟動於 LIVE 模式，使用真實資金！")
     exchange_pub = ccxt.binance({'enableRateLimit': True})
-
-    log.info("Exchange: Binance Futures (DEMO MODE)")
     log.info(f"Config  : max_pos={MAX_POS_PCT*100:.0f}%  min_hold={MIN_HOLD_HOURS}h  threshold={THRESHOLD}")
 
     state = load_state()
@@ -475,8 +541,10 @@ def main():
             log.info("Fetching market data ...")
             df = fetch_tick_data(exchange_pub, feature_cols)
             prob, direction = predict(model, scaler, df, feature_cols, seq_len)
+            regime    = detect_regime(df)
             dir_label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}[direction]
             log.info(f"Signal  : {dir_label}  (prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)")
+            log.info(f"Regime  : {regime}")
             explain_prediction(model, scaler, df, feature_cols, seq_len)
 
             # 1a. 提前翻倉（震盪偵測）
@@ -485,7 +553,7 @@ def main():
                 save_state(state)
                 if direction != 0:
                     balance = get_balance(exchange)
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
@@ -505,7 +573,7 @@ def main():
                 if direction != 0:
                     balance = get_balance(exchange)
                     log.info(f"SL/TP triggered — immediately re-entering {dir_label}")
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
@@ -538,7 +606,7 @@ def main():
                     time.sleep(1)
 
                 if direction != 0:
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
