@@ -9,8 +9,7 @@ RUN pip install --default-timeout=1000 --no-cache-dir \
     torch --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --default-timeout=1000 --no-cache-dir \
-    -r requirements.txt \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple
+    -r requirements.txt
 
 COPY . .
 
