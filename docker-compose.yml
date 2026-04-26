@@ -19,7 +19,7 @@ services:
       - .env
     environment:
       - SYMBOL=ETH
-      - LONG_FLAT_ONLY=true
+      - LONG_FLAT_ONLY=false
     volumes:
       - ./eth_model_wf.pt:/app/eth_model_wf.pt
       - ./eth_scaler_wf.pkl:/app/eth_scaler_wf.pkl
