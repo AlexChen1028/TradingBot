@@ -82,7 +82,8 @@ print(f"Device: {device}")
 if device.type == 'cuda':
     print(f"  GPU : {torch.cuda.get_device_name(0)}")
 
-HOURS_PER_MONTH = 24 * 30   # approximate
+_TF_HOURS       = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}
+HOURS_PER_MONTH = int(24 * 30 / _TF_HOURS.get(args.timeframe, 1))  # bars per month
 SEQ_LEN  = args.seq_len
 D_MODEL  = args.d_model
 NHEAD    = args.nhead
