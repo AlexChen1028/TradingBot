@@ -175,7 +175,7 @@ def train_window(X_tr, y_tr, w_tr, X_va, y_va, w_va,
     va_loader = DataLoader(BTCDataset(X_va, y_va, w_va), BATCH,
                            shuffle=False, pin_memory=(device.type=='cuda'), num_workers=0)
 
-    model = TransformerPredictor(len(FEATURE_COLS)).to(device)
+    model = TransformerPredictor(X_tr.shape[2]).to(device)
     optim = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
 
     best_acc   = 0.0
