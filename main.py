@@ -58,6 +58,7 @@ INTERVAL_SECS  = 3600
 LEVERAGE       = int(os.getenv('LEVERAGE', '20'))
 SL_PCT         = float(os.getenv('SL_PCT', '0.03'))   # 止損：價格偏離 3%
 TP_PCT         = float(os.getenv('TP_PCT', '0.05'))   # 止盈：價格偏離 5%
+MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：20%
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -113,12 +114,17 @@ class TransformerPredictor(nn.Module):
 
 # ── State persistence ─────────────────────────────────────────────────────────
 _DEFAULT_STATE = {
-    'direction':    0,
-    'amount_coin':  0.0,
-    'entry_time':   None,
-    'entry_price':  None,
-    'sl_order_id':  None,
-    'tp_order_id':  None,
+    'direction':          0,
+    'amount_coin':        0.0,
+    'entry_time':         None,
+    'entry_price':        None,
+    'sl_order_id':        None,
+    'tp_order_id':        None,
+    'peak_balance':       None,   # 帳戶最高峰值（回撤保護用）
+    'paused':             False,  # 是否因回撤暫停
+    'daily_open_balance': None,   # 當天開始餘額（每日報告用）
+    'daily_open_time':    None,   # 當天開始時間
+    'last_heartbeat':     None,   # 上次健康檢查時間
 }
 
 def load_state() -> dict:
@@ -353,6 +359,62 @@ def open_position(exchange, direction: int, balance: float):
         return 0.0, price, None, None
 
 
+# ── 最大回撤保護 ─────────────────────────────────────────────────────────────
+def check_max_drawdown(balance: float, state: dict) -> bool:
+    if state.get('paused'):
+        log.warning(f"[{_COIN}] ⛔ Bot 已暫停（回撤保護），跳過本次交易")
+        return True
+    peak = state.get('peak_balance') or balance
+    state['peak_balance'] = max(peak, balance)
+    drawdown = (state['peak_balance'] - balance) / state['peak_balance']
+    if drawdown >= MAX_DD_PCT:
+        msg = (f"[{_COIN}] 🚨 最大回撤保護觸發！\n"
+               f"峰值餘額：{state['peak_balance']:,.2f} U\n"
+               f"當前餘額：{balance:,.2f} U\n"
+               f"回撤：{drawdown*100:.1f}%（閾值 {MAX_DD_PCT*100:.0f}%）\n"
+               f"⛔ 暫停交易，請手動在 .json 狀態檔將 paused 改為 false 恢復")
+        log.warning(msg)
+        tg_send(msg)
+        state['paused'] = True
+        return True
+    return False
+
+
+# ── 每日績效報告 ──────────────────────────────────────────────────────────────
+def handle_daily_report(balance: float, state: dict, now: datetime):
+    daily_time = state.get('daily_open_time')
+    if daily_time:
+        last_day = datetime.fromisoformat(daily_time).date()
+        if now.date() > last_day:
+            open_bal = state.get('daily_open_balance') or balance
+            pnl_usdt = balance - open_bal
+            pnl_pct  = pnl_usdt / open_bal * 100 if open_bal else 0
+            emoji    = '📈' if pnl_usdt >= 0 else '📉'
+            tg_send(
+                f"{emoji} <b>[{_COIN}] 每日績效報告</b>\n"
+                f"📅 {last_day}\n\n"
+                f"開始餘額：{open_bal:,.2f} U\n"
+                f"結束餘額：{balance:,.2f} U\n"
+                f"日盈虧：{pnl_usdt:+.2f} U（{pnl_pct:+.2f}%）"
+            )
+            log.info(f"Daily report: {pnl_usdt:+.2f} U ({pnl_pct:+.2f}%)")
+    if not daily_time or now.date() > datetime.fromisoformat(daily_time).date():
+        state['daily_open_balance'] = balance
+        state['daily_open_time']    = now.isoformat()
+
+
+# ── 健康檢查心跳 ──────────────────────────────────────────────────────────────
+def handle_heartbeat(state: dict, now: datetime):
+    last = state.get('last_heartbeat')
+    if last is None or (now - datetime.fromisoformat(last)).total_seconds() >= 86400:
+        tg_send(
+            f"💚 <b>[{_COIN}] Bot 健康檢查</b>\n"
+            f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"✅ 運行正常，每 24h 發送一次"
+        )
+        state['last_heartbeat'] = now.isoformat()
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 def main():
     for p in (MODEL_PATH, SCALER_PATH):
@@ -399,6 +461,17 @@ def main():
         log.info(f"{'='*55}")
 
         try:
+            # 每 tick 取一次餘額，供回撤保護和每日報告使用
+            balance = get_balance(exchange)
+            handle_daily_report(balance, state, now)
+            handle_heartbeat(state, now)
+            save_state(state)
+
+            if check_max_drawdown(balance, state):
+                save_state(state)
+                time.sleep(INTERVAL_SECS)
+                continue
+
             log.info("Fetching market data ...")
             df = fetch_tick_data(exchange_pub, feature_cols)
             prob, direction = predict(model, scaler, df, feature_cols, seq_len)
