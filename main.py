@@ -311,10 +311,32 @@ def check_sltp_triggered(exchange, state: dict, next_direction: int = 0) -> bool
             msg = f"[{_COIN}] SL/TP triggered on {side}"
         log.info(msg)
         tg_send(f"⚡ {msg}")
+        reason = 'tp' if (ep and (cur_price - ep) / ep * state['direction'] > 0) else 'sl'
+        log_trade(state, cur_price, reason)
         return True
     except Exception as e:
         log.warning(f"check_sltp_triggered error: {e}")
         return False
+
+def log_trade(state: dict, close_price: float, reason: str):
+    """每次平倉寫一筆 JSON 到 {coin}_trades.jsonl 供儀表板使用。"""
+    ep  = state.get('entry_price') or close_price
+    amt = state.get('amount_coin', 0)
+    pnl_usdt = amt * (close_price - ep) * state['direction']
+    record = {
+        'coin':        _COIN,
+        'direction':   state['direction'],
+        'entry_price': ep,
+        'close_price': close_price,
+        'amount':      amt,
+        'pnl_usdt':    round(pnl_usdt, 4),
+        'entry_time':  state.get('entry_time'),
+        'close_time':  datetime.utcnow().isoformat(),
+        'reason':      reason,
+    }
+    with open(f'{_COIN.lower()}_trades.jsonl', 'a', encoding='utf-8') as f:
+        f.write(json.dumps(record) + '\n')
+
 
 def cancel_sltp(exchange, state: dict):
     for key in ('sl_order_id', 'tp_order_id'):
@@ -346,6 +368,7 @@ def close_position(exchange, state: dict):
                f"保證金盈虧：{pnl_pct:+.2f}%  ({pnl_usdt:+.2f} U)")
         log.info(msg)
         tg_send(f"🔒 {msg}")
+        log_trade(state, price, 'signal')
     except Exception as e:
         log.error(f"Failed to close position: {e}")
 
