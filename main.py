@@ -56,6 +56,7 @@ THRESHOLD      = 0.50
 LOOKBACK_DAYS  = 60
 INTERVAL_SECS  = 3600
 STOP_LOSS_PCT  = 0.05
+LEVERAGE       = int(os.getenv('LEVERAGE', '1'))   # 逐倉槓桿倍數（預設 1x）
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -251,6 +252,13 @@ def open_position(exchange, direction: int, balance: float):
     amount   = max(round(usdt / price, 4), 0.001)
     side_str = 'LONG' if direction == 1 else 'SHORT'
     try:
+        # 切換逐倉模式並設定槓桿
+        try:
+            exchange.set_margin_mode('isolated', SYMBOL)
+            exchange.set_leverage(LEVERAGE, SYMBOL, params={'marginMode': 'isolated'})
+        except Exception as e:
+            log.warning(f"Margin/leverage setup: {e}")
+
         if direction == 1:
             exchange.create_market_buy_order(SYMBOL, amount)
         else:
