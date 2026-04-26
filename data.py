@@ -53,6 +53,14 @@ FEATURE_COLS = [
     'fr_trend_corr', 'sent_trend_corr',
 ]  # 40 features
 
+# Extra cross-asset features added when training non-BTC coins
+ETH_EXTRA_COLS = [
+    'eth_btc_ratio',      # ETH/BTC relative strength (z-scored, 7d window)
+    'eth_btc_ratio_mom',  # 24h change in ETH/BTC ratio
+    'btc_ret_1h',         # BTC 1h return (leading indicator for ETH)
+    'btc_ret_4h',         # BTC 4h return
+]
+
 TARGET_AHEAD = 6
 
 # RSS feeds to scrape for news sentiment
@@ -261,7 +269,7 @@ def merge_context(btc: pd.DataFrame,
 
 
 # ── 7. Feature engineering ────────────────────────────────────────────────────
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, ref_btc: pd.DataFrame = None) -> pd.DataFrame:
     c, o, h, l = df['close'], df['open'], df['high'], df['low']
 
     # ── BTC technical ──────────────────────────────────────────────────────
@@ -360,6 +368,21 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
         .corr(pd.Series(trend, index=df.index))
         .fillna(0)
     )
+
+    # ── ETH/BTC cross-asset features (only when ref_btc provided) ─────────
+    if ref_btc is not None:
+        btc_c = (ref_btc.set_index('ts')['close']
+                 .reindex(df['ts'].values)
+                 .ffill()
+                 .values)
+        btc_s   = pd.Series(btc_c, index=df.index)
+        ratio   = pd.Series(c.values / btc_c, index=df.index)
+        r_ma    = ratio.rolling(168).mean()
+        r_std   = ratio.rolling(168).std().clip(lower=1e-9)
+        df['eth_btc_ratio']     = (ratio - r_ma) / r_std
+        df['eth_btc_ratio_mom'] = ratio.pct_change(24)
+        df['btc_ret_1h']        = btc_s.pct_change(1)
+        df['btc_ret_4h']        = np.log(btc_s / btc_s.shift(4))
 
     # ── Target ────────────────────────────────────────────────────────────
     df['target'] = (c.shift(-TARGET_AHEAD) > c).astype(float)

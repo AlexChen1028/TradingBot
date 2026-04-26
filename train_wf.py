@@ -44,7 +44,7 @@ from data import (fetch_btc, fetch_us_market, fetch_fear_greed,
                   fetch_funding_rate, fetch_news_sentiment,
                   merge_context, add_features,
                   compute_sample_weights,
-                  FEATURE_COLS, TARGET_AHEAD)
+                  FEATURE_COLS, ETH_EXTRA_COLS, TARGET_AHEAD)
 
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 
@@ -133,16 +133,19 @@ class BTCDataset(Dataset):
 
 
 # ── Sequences ─────────────────────────────────────────────────────────────────
-def make_sequences(df_slice: pd.DataFrame, scaler=None, fit_scaler=True):
+def make_sequences(df_slice: pd.DataFrame, scaler=None, fit_scaler=True,
+                   feature_cols=None):
     """
     Build (X, y, w) arrays from a DataFrame slice.
     If fit_scaler=True, fit a new StandardScaler on this slice.
     If fit_scaler=False, transform using the provided scaler (test window).
     """
+    if feature_cols is None:
+        feature_cols = FEATURE_COLS
     df = df_slice.replace([np.inf, -np.inf], np.nan)
-    df = df.dropna(subset=FEATURE_COLS + ['target']).reset_index(drop=True)
+    df = df.dropna(subset=feature_cols + ['target']).reset_index(drop=True)
 
-    raw_X = df[FEATURE_COLS].values.astype(np.float32)
+    raw_X = df[feature_cols].values.astype(np.float32)
     raw_y = df['target'].values.astype(np.float32)
     raw_w = compute_sample_weights(df)
 
@@ -366,15 +369,25 @@ def plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin='BTC/USDT'):
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     # ── fetch all data once ──
-    coin = args.symbol  # e.g. 'BTC/USDT' or 'ETH/USDT'
-    btc  = fetch_btc(symbol=coin, since_iso=f"{args.since}T00:00:00Z")
-    mkt  = fetch_us_market(start=args.since)
-    fng  = fetch_fear_greed()
-    fr   = fetch_funding_rate(symbol=f"{coin}:USDT")
-    news = fetch_news_sentiment()
-    df   = merge_context(btc, mkt, fng, fr, news)
-    df   = add_features(df)
-    df   = df.replace([np.inf, -np.inf], np.nan).reset_index(drop=True)
+    coin     = args.symbol  # e.g. 'BTC/USDT' or 'ETH/USDT'
+    is_btc   = coin.upper().startswith('BTC')
+    ohlcv    = fetch_btc(symbol=coin, since_iso=f"{args.since}T00:00:00Z")
+    mkt      = fetch_us_market(start=args.since)
+    fng      = fetch_fear_greed()
+    fr       = fetch_funding_rate(symbol=f"{coin}:USDT")
+    news     = fetch_news_sentiment()
+    df       = merge_context(ohlcv, mkt, fng, fr, news)
+
+    # For non-BTC coins fetch BTC as cross-asset reference
+    ref_btc = None
+    if not is_btc:
+        print("[Cross-asset] Fetching BTC/USDT as reference ...")
+        ref_btc = fetch_btc(symbol='BTC/USDT', since_iso=f"{args.since}T00:00:00Z")
+
+    df = add_features(df, ref_btc=ref_btc)
+    df = df.replace([np.inf, -np.inf], np.nan).reset_index(drop=True)
+
+    feature_cols = FEATURE_COLS + (ETH_EXTRA_COLS if ref_btc is not None else [])
 
     total_bars   = len(df)
     train_bars   = args.train_months * HOURS_PER_MONTH
@@ -416,9 +429,9 @@ def main():
         df_tr = df_train.iloc[:val_split]
         df_va = df_train.iloc[val_split:]
 
-        X_tr, y_tr, w_tr, scaler = make_sequences(df_tr, fit_scaler=True)
-        X_va, y_va, w_va, _      = make_sequences(df_va, scaler=scaler, fit_scaler=False)
-        X_te, y_te, w_te, _      = make_sequences(df_test, scaler=scaler, fit_scaler=False)
+        X_tr, y_tr, w_tr, scaler = make_sequences(df_tr, fit_scaler=True, feature_cols=feature_cols)
+        X_va, y_va, w_va, _      = make_sequences(df_va, scaler=scaler, fit_scaler=False, feature_cols=feature_cols)
+        X_te, y_te, w_te, _      = make_sequences(df_test, scaler=scaler, fit_scaler=False, feature_cols=feature_cols)
 
         if len(X_tr) == 0 or len(X_te) == 0:
             continue
@@ -475,11 +488,11 @@ def main():
     torch.save({
         'model_state': model.state_dict(),
         'config': {
-            'n_features': len(FEATURE_COLS),
+            'n_features': len(feature_cols),
             'd_model': D_MODEL, 'nhead': NHEAD,
             'num_layers': N_LAYERS, 'dropout': DROPOUT,
             'seq_len': SEQ_LEN, 'target_ahead': TARGET_AHEAD,
-            'feature_cols': FEATURE_COLS,
+            'feature_cols': feature_cols,
         },
     }, f'{coin.split("/")[0].lower()}_model_wf.pt')
     joblib.dump(scaler, f'{coin.split("/")[0].lower()}_scaler_wf.pkl')
