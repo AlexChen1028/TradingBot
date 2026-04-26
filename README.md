@@ -1,6 +1,8 @@
-# BTC/USDT ML Trading Bot
+# ML Crypto Trading Bot
 
-使用 **Transformer 深度學習模型** 預測 BTC 6 小時後價格方向，並在 Binance Futures（Demo 帳戶）自動執行多空交易。
+使用 **Transformer 深度學習模型** 預測加密貨幣 6 小時後價格方向，並在 Binance Futures（Demo 帳戶）自動執行多空交易。
+
+支援 **BTC、ETH** 及任意 USDT 永續合約幣對訓練與部署。
 
 ---
 
@@ -8,13 +10,16 @@
 
 ```
 crypto-bot/
-├── data.py          # 資料獲取、特徵工程、樣本加權（共用）
-├── train.py         # 簡單訓練（單次 train/val 切分）
-├── train_wf.py      # Walk-Forward 訓練（主要使用）
-├── backtest.py      # 回測工具（配合 train.py 模型）
-├── main.py          # 實盤 Bot 主程式（Binance Demo）
-├── Dockerfile       # 容器化部署
-├── docker-compose.yml
+├── data.py               # 資料獲取、特徵工程、樣本加權（共用）
+├── train.py              # 簡單訓練（單次 train/val 切分）
+├── train_wf.py           # Walk-Forward 訓練（主要使用，支援任意幣對）
+├── backtest.py           # 回測工具（配合 train.py 模型）
+├── backtest_volatile.py  # 爆量追蹤策略回測
+├── scan_coins.py         # 高波動幣種掃描器
+├── monitor_coins.py      # 山寨幣監控 + 自動交易 Bot
+├── main.py               # BTC/ETH ML Bot 主程式（Binance Demo）
+├── Dockerfile            # 容器化部署
+├── docker-compose.yml    # 同時啟動 ML Bot + 山寨幣監控
 └── requirements.txt
 ```
 
@@ -47,7 +52,7 @@ crypto-bot/
 
 | 類別 | 特徵數 | 說明 |
 |---|---|---|
-| BTC 動量 | 5 | returns, log\_returns, ret\_4h/8h/24h |
+| 幣價動量 | 5 | returns, log\_returns, ret\_4h/8h/24h |
 | 成交量 | 2 | volume\_change, volume\_ratio |
 | 趨勢 | 3 | EMA9/21/50 ratio |
 | 震盪指標 | 2 | RSI, MACD histogram |
@@ -67,7 +72,7 @@ crypto-bot/
 
 | 資料 | 來源 |
 |---|---|
-| BTC 1h K 線 | Binance（via ccxt） |
+| 1h K 線 | Binance（via ccxt，支援任意幣對） |
 | 美股日收盤 | yfinance（SPY, QQQ, VIX, GLD） |
 | 恐貪指數 | alternative.me API（免費） |
 | 資金費率（8h） | Binance Futures API（via ccxt） |
@@ -89,27 +94,35 @@ Window N:  train 2024-10 ~ 2026-01  |  test 2026-02 ~ 2026-04
 - 每個視窗獨立訓練一個全新模型
 - 以驗證集準確率做 Early Stopping（patience=10）
 - 所有測試窗口的預測拼接後統一做回測
-- **最後一個視窗的模型**儲存為正式模型（`btc_model_wf.pt`）
+- **最後一個視窗的模型**儲存為正式模型
 
 ### 訓練指令
 
 ```bash
-# 預設設定（train=18m, test=3m, step=3m）
+# BTC（預設）
 python train_wf.py
 
-# 自訂參數
-python train_wf.py --train_months 12 --test_months 2 --fee 0.0002 --sizing half_kelly
+# ETH
+python train_wf.py --symbol ETH/USDT --since 2019-10-01
+
+# 任意幣對 + 自訂參數
+python train_wf.py --symbol SOL/USDT --train_months 12 --test_months 2 --fee 0.0002 --sizing half_kelly
 ```
+
+訓練完成後自動產生（以 ETH 為例）：
+- `eth_model_wf.pt` — 模型權重
+- `eth_scaler_wf.pkl` — 特徵標準化器
+- `eth_backtest_wf.png` — 回測圖表
 
 ---
 
 ## 回測結果
 
-### Walk-Forward 回測（Out-of-Sample，2021–2026）
+### BTC Walk-Forward 回測（Out-of-Sample）
 
-![Walk-Forward Backtest](backtest_wf.png)
+![BTC Walk-Forward Backtest](btc_backtest_wf.png)
 
-### 全歷史回測（In-Sample，2017–2026）
+### 全歷史回測（In-Sample）
 
 ![Full Backtest](backtest_result.png)
 
@@ -127,18 +140,43 @@ python train_wf.py --train_months 12 --test_months 2 --fee 0.0002 --sizing half_
 
 ---
 
-## 交易策略（main.py）
+## Bot 說明
+
+### ML Bot（`main.py`）
+
+使用 Walk-Forward 模型預測幣價方向，自動執行 Binance Futures 多空交易。
 
 | 設定 | 值 |
 |---|---|
-| 交易對 | BTC/USDT:USDT（USDT-M 永續合約） |
+| 交易對 | BTC/USDT:USDT（可改為 ETH） |
 | 模型推論頻率 | 每小時 |
-| 最小持倉時間 | 24h |
+| 最小持倉時間 | 6h |
 | 單次開倉比例 | 20% 可用 USDT |
 | 訊號閾值 | P > 0.50 → 做多，P < 0.50 → 做空 |
 | 訂單類型 | 市價單 |
 | 停損 | 虧損 ≥ 5% 強制平倉 |
-| 帳戶模式 | **Binance Demo（模擬交易）** |
+| 帳戶模式 | Binance Demo（模擬交易） |
+
+### 山寨幣監控 Bot（`monitor_coins.py`）
+
+每 15 分鐘掃描高波動幣種，偵測到 3 個以上信號自動開倉。每小時發送 Binance 全市場漲跌幅榜到 Telegram。
+
+| 設定 | 值 |
+|---|---|
+| 監控幣種 | 自動篩選前 20 名高波動 USDT 永續合約 |
+| 掃描頻率 | 每 15 分鐘 |
+| 每筆保證金 | $50 USDT |
+| 槓桿 | 20x |
+| 最大同時持倉 | 3 個 |
+| 止損 | 10% |
+| 追蹤止盈 | 從最佳價格回落 15% |
+| 最長持倉 | 48 小時 |
+
+#### 信號條件（4 選 3）
+1. 成交量 ≥ 24h 均量的 1.5 倍
+2. 近 4h 波動壓縮至均值 50% 以下
+3. 距 14 日高點 ≤ 3%（突破訊號）
+4. 資金費率劇變（±0.02%）
 
 ---
 
@@ -148,19 +186,17 @@ python train_wf.py --train_months 12 --test_months 2 --fee 0.0002 --sizing half_
 
 ```bash
 pip install -r requirements.txt
-# PyTorch 需另行安裝（配合 CUDA 版本）：
-# https://pytorch.org/get-started/locally/
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### 2. 訓練模型
 
 ```bash
-# Walk-Forward 訓練（推薦）
+# BTC
 python train_wf.py
 
-# 或簡單訓練
-python train.py
+# ETH
+python train_wf.py --symbol ETH/USDT --since 2019-10-01
 ```
 
 ### 3. 回測
@@ -170,24 +206,64 @@ python backtest.py
 python backtest.py --since 2022-01-01 --fee 0.0002
 ```
 
-### 4. 啟動 Bot
+### 4. 本機啟動
 
 ```bash
-# 設定 API 金鑰（Binance Demo 帳戶）
-set BINANCE_API_KEY=your_key
-set BINANCE_SECRET_KEY=your_secret
-
-python main.py
+cp .env.example .env
+# 填入 API 金鑰後：
+python main.py          # ML Bot
+python monitor_coins.py # 山寨幣監控
 ```
 
-### 5. Docker 部署
+### 5. Docker 本機啟動
 
 ```bash
-# 建立 .env 檔案
-echo BINANCE_API_KEY=your_key > .env
-echo BINANCE_SECRET_KEY=your_secret >> .env
+cp .env.example .env
+# 填入金鑰後：
+docker compose up -d --build
+```
 
-docker-compose up -d
+---
+
+## 雲端部署（VPS）
+
+### 環境需求
+- Ubuntu 24.04
+- Docker + Docker Compose Plugin
+
+### 部署步驟
+
+```bash
+# 1. 安裝 Docker
+curl -fsSL https://get.docker.com | sh
+apt install docker-compose-plugin -y
+
+# 2. Clone 專案
+git clone https://github.com/AlexChen1028/TradingBot.git
+cd TradingBot
+
+# 3. 設定金鑰
+cp .env.example .env
+nano .env
+
+# 4. 啟動（自動重啟，VPS 重開機後也會自動恢復）
+docker compose up -d --build
+```
+
+### 常用指令
+
+```bash
+# 查看狀態
+docker compose ps
+
+# 查看 ML Bot log
+docker logs -f tradingbot-trading-bot-1
+
+# 查看山寨幣監控 log
+docker logs -f tradingbot-coin-monitor-1
+
+# 更新程式碼
+git pull && docker compose up -d --build
 ```
 
 ---
@@ -198,14 +274,16 @@ docker-compose up -d
 |---|---|
 | `BINANCE_API_KEY` | Binance API Key |
 | `BINANCE_SECRET_KEY` | Binance Secret Key |
-| `TELEGRAM_TOKEN` | Telegram Bot Token（選填，不填則不發通知） |
-| `TELEGRAM_CHAT_ID` | Telegram Chat ID（選填） |
+| `TELEGRAM_TOKEN` | ML Bot 的 Telegram Token（選填） |
+| `TELEGRAM_CHAT_ID` | ML Bot 通知的 Chat ID（選填） |
+| `MONITOR_TOKEN` | 山寨幣監控的 Telegram Token（選填） |
+| `MONITOR_CHAT_ID` | 山寨幣監控通知的 Chat ID，可填多個用逗號分隔（選填） |
 
 ---
 
 ## 樣本加權機制
 
-訓練時對「情緒極端」時期的樣本給予更高權重，讓模型在關鍵行情前後學得更仔細：
+訓練時對「情緒極端」時期的樣本給予更高權重：
 
 ```
 weight_i = 1 + 1.5 × sentiment_strength_i
@@ -221,31 +299,25 @@ sentiment_strength = (|fr_z| / 3 + |fng - 0.5| × 2 + |news_sent|) / 3
 
 ## 待辦事項
 
-### 緊急（功能性缺陷）
-
-- [x] **修復 `requirements.txt`**：補上 `yfinance`、`feedparser`、`vaderSentiment`、`requests`
-- [x] **修復 Dockerfile**：加入 PyTorch 安裝指令（CPU build；需 GPU 請換 CUDA index URL）
-- [x] **修復 `docker-compose.yml`**：加入 `volumes` 掛載，避免容器重啟後遺失模型檔、`bot_state.json`、`bot.log`
-- [x] **新增 `.env.example`**：讓新使用者知道需要哪些環境變數
-
 ### 功能強化
 
-- [ ] **自動定期重訓**：每月用最新資料重跑 `train_wf.py`，更新線上模型
-- [x] **交易通知**：開倉/平倉/異常時發送 Telegram 訊息（設定 `TELEGRAM_TOKEN` + `TELEGRAM_CHAT_ID` 即啟用）
-- [x] **停損機制**：虧損超過 `STOP_LOSS_PCT`（預設 5%）時強制平倉，並發送 Telegram 警報
-- [ ] **最大回撤保護**：組合虧損超過閾值時暫停交易
-- [ ] **真實帳戶模式**：新增設定項切換 Demo / Live
-- [ ] **多幣種支援**：擴展至 ETH、SOL 等其他幣對
+- [x] 交易通知（Telegram）
+- [x] 停損機制（虧損 ≥ 5% 強制平倉）
+- [x] 山寨幣監控 + 自動交易
+- [x] 多幣種訓練支援（ETH、SOL 等）
+- [ ] ETH Bot 整合進 `main.py`
+- [ ] 最大回撤保護
+- [ ] 真實帳戶模式切換
+- [ ] 自動定期重訓
 
 ### 監控與可觀測性
 
-- [ ] **績效儀表板**：Grafana 或簡易 HTML 頁面，顯示每日 PnL、持倉狀況、模型信心
-- [ ] **健康檢查**：Bot 異常中斷時自動發送警報
-- [ ] **交易日誌結構化**：將 `bot.log` 改為 JSON 格式，方便後續分析
+- [ ] 績效儀表板（Grafana 或簡易 HTML）
+- [ ] 健康檢查（Bot 異常時自動警報）
+- [ ] 交易日誌結構化（JSON 格式）
 
 ### 研究方向
 
-- [ ] **更長預測視窗**：嘗試 12h / 24h 目標，減少交易頻率、降低手續費侵蝕
-- [ ] **Regime 偵測**：加入牛熊市場狀態特徵，讓模型在不同市況下有不同行為
-- [ ] **特徵重要性分析**：用 SHAP 分析哪些特徵對模型貢獻最大
-- [ ] **超參數搜尋**：Optuna 自動調整 d\_model、nhead、seq\_len 等
+- [ ] 更長預測視窗（12h / 24h）
+- [ ] Regime 偵測（牛熊市場狀態特徵）
+- [ ] 超參數搜尋（Optuna）
