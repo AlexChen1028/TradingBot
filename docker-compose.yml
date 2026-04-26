@@ -1,0 +1,22 @@
+services:
+  trading-bot:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./btc_model_wf.pt:/app/btc_model_wf.pt
+      - ./btc_scaler_wf.pkl:/app/btc_scaler_wf.pkl
+      - ./bot_state.json:/app/bot_state.json
+      - ./bot.log:/app/bot.log
+
+  coin-monitor:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./monitor_coins.py:/app/monitor_coins.py
+      - ./scan_coins.py:/app/scan_coins.py
+      - ./positions_altcoin.json:/app/positions_altcoin.json
+    command: python -u monitor_coins.py

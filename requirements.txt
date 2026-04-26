@@ -1,0 +1,13 @@
+ccxt
+pandas
+numpy
+scikit-learn
+joblib
+matplotlib
+requests
+yfinance
+feedparser
+vaderSentiment
+# PyTorch: install with the correct CUDA version from https://pytorch.org/get-started/locally/
+# CPU-only fallback (used in Docker — override with GPU build if needed):
+torch

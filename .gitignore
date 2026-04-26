@@ -1,0 +1,25 @@
+# Secrets
+.env
+
+# Runtime state (recreated automatically)
+bot_state.json
+positions_altcoin.json
+bot.log
+
+# Generated outputs
+volatile_coins.csv
+backtest_volatile.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

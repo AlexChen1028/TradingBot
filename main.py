@@ -1,0 +1,437 @@
+"""
+BTC/USDT ML Trading Bot
+Uses the Walk-Forward trained Transformer model (btc_model_wf.pt) to predict
+6h BTC direction and execute futures trades on Binance demo account.
+
+Strategy:
+  - Every hour: fetch latest data → run model → get direction signal
+  - Min-hold 24h: once in a position, hold at least 24h before switching
+  - Position size: fixed 20% of free USDT balance per trade
+  - Order type: market (switch to limit for lower fee in production)
+
+Usage:
+  set BINANCE_API_KEY=your_key
+  set BINANCE_SECRET_KEY=your_secret
+  python main.py
+"""
+
+import os
+import sys
+import json
+import time
+import logging
+import warnings
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import joblib
+import ccxt
+import requests as _requests
+
+warnings.filterwarnings('ignore')
+
+# Import shared data utilities from data.py
+from data import (
+    fetch_us_market, fetch_fear_greed, fetch_funding_rate,
+    fetch_news_sentiment, merge_context, add_features, FEATURE_COLS
+)
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('bot.log', encoding='utf-8'),
+    ]
+)
+log = logging.getLogger(__name__)
+
+# ── Config ────────────────────────────────────────────────────────────────────
+SYMBOL         = 'BTC/USDT:USDT'     # Binance USDT-M futures
+MODEL_PATH     = 'btc_model_wf.pt'   # walk-forward model (best)
+SCALER_PATH    = 'btc_scaler_wf.pkl'
+STATE_FILE     = 'bot_state.json'
+
+MAX_POS_PCT    = 0.20    # max 20% of free USDT per position
+MIN_HOLD_HOURS = 6       # min hours before switching direction
+THRESHOLD      = 0.50    # probability threshold for long/short
+LOOKBACK_DAYS  = 60      # history to fetch for features
+INTERVAL_SECS  = 3600    # run every hour
+STOP_LOSS_PCT  = 0.05    # close position if unrealized loss exceeds 5%
+
+# ── Telegram ──────────────────────────────────────────────────────────────────
+# Set TELEGRAM_TOKEN and TELEGRAM_CHAT_ID in .env (or environment) to enable.
+_TG_TOKEN   = os.getenv('TELEGRAM_TOKEN',   '')
+_TG_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+def tg_send(text: str):
+    """Send a Telegram message; silently no-ops if credentials are not set."""
+    if not _TG_TOKEN or not _TG_CHAT_ID:
+        return
+    try:
+        _requests.post(
+            f'https://api.telegram.org/bot{_TG_TOKEN}/sendMessage',
+            json={'chat_id': _TG_CHAT_ID, 'text': text, 'parse_mode': 'HTML'},
+            timeout=10,
+        )
+    except Exception as e:
+        log.warning(f'Telegram error: {e}')
+
+
+# ── Model definition (must match train_wf.py) ─────────────────────────────────
+class TransformerPredictor(nn.Module):
+    def __init__(self, n_features, d_model, nhead, num_layers, dropout, seq_len):
+        super().__init__()
+        self.input_proj = nn.Linear(n_features, d_model)
+        self.pos_embed  = nn.Parameter(torch.zeros(1, seq_len, d_model))
+        enc = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4,
+            dropout=dropout, batch_first=True, norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(enc, num_layers=num_layers)
+        self.norm = nn.LayerNorm(d_model)
+        self.head = nn.Sequential(
+            nn.Linear(d_model, d_model // 2), nn.GELU(),
+            nn.Dropout(dropout), nn.Linear(d_model // 2, 1),
+        )
+
+    def forward(self, x):
+        x = self.input_proj(x) + self.pos_embed
+        x = self.transformer(x)
+        x = self.norm(x)
+        return self.head((x.mean(1) + x[:, -1, :]) / 2).squeeze(-1)
+
+
+# ── State persistence ─────────────────────────────────────────────────────────
+_DEFAULT_STATE = {
+    'direction':   0,      # 1=long, -1=short, 0=flat
+    'amount_btc':  0.0,    # BTC held
+    'entry_time':  None,   # ISO timestamp
+    'entry_price': None,   # USD price at entry
+}
+
+def load_state() -> dict:
+    p = Path(STATE_FILE)
+    if p.exists():
+        return json.loads(p.read_text())
+    return _DEFAULT_STATE.copy()
+
+def save_state(s: dict):
+    Path(STATE_FILE).write_text(json.dumps(s, indent=2))
+
+
+# ── Data fetch for one inference tick ─────────────────────────────────────────
+def fetch_tick_data(exchange_pub) -> pd.DataFrame:
+    """
+    Fetch LOOKBACK_DAYS of history from all sources and return
+    a merged, feature-engineered DataFrame ready for inference.
+    """
+    since = (datetime.utcnow() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
+
+    # BTC 1h candles
+    limit = (LOOKBACK_DAYS + 5) * 24
+    raw   = exchange_pub.fetch_ohlcv('BTC/USDT', '1h', limit=limit)
+    btc   = pd.DataFrame(raw, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
+    btc['ts'] = pd.to_datetime(btc['ts'], unit='ms').dt.tz_localize(None)
+
+    mkt  = fetch_us_market(start=since)
+    fng  = fetch_fear_greed()
+    fr   = fetch_funding_rate(since_iso=f"{since}T00:00:00Z")
+    news = fetch_news_sentiment()
+
+    df = merge_context(btc, mkt, fng, fr, news)
+    df = add_features(df)
+    return df
+
+
+# ── Model inference ───────────────────────────────────────────────────────────
+def predict(model, scaler, df: pd.DataFrame, feature_cols: list, seq_len: int):
+    """
+    Returns (prob, direction):
+      prob      : model output probability (0-1)
+      direction : 1=long, -1=short, 0=flat
+    """
+    df_c = df.replace([float('inf'), float('-inf')], float('nan')
+                      ).dropna(subset=feature_cols)
+
+    if len(df_c) < seq_len:
+        raise ValueError(f"Not enough data after dropna: {len(df_c)} rows (need {seq_len})")
+
+    X = scaler.transform(df_c[feature_cols].values[-seq_len:].astype('float32'))
+    with torch.no_grad():
+        logit = model(torch.from_numpy(X).unsqueeze(0)).item()
+        prob  = float(torch.sigmoid(torch.tensor(logit)))
+
+    if prob > THRESHOLD:
+        direction = 1
+    elif prob < (1 - THRESHOLD):
+        direction = -1
+    else:
+        direction = 0
+
+    return prob, direction
+
+
+# ── SHAP explanation ──────────────────────────────────────────────────────────
+def explain_prediction(model, scaler, df: pd.DataFrame, feature_cols: list, seq_len: int):
+    """Log top-10 gradient×input feature attributions for the latest prediction."""
+    try:
+        df_c = df.replace([float('inf'), float('-inf')], float('nan')).dropna(subset=feature_cols)
+        X_all = scaler.transform(df_c[feature_cols].values.astype('float32'))
+
+        x = torch.from_numpy(X_all[-seq_len:][np.newaxis])  # (1, seq_len, n_features)
+        x.requires_grad_(True)
+
+        out = model(x)
+        out.sum().backward()
+
+        grads  = x.grad.detach().numpy()[0]      # (seq_len, n_features)
+        inp    = x.detach().numpy()[0]            # (seq_len, n_features)
+        scores = (grads * inp).mean(axis=0)       # (n_features,)
+
+        top_idx = np.argsort(np.abs(scores))[::-1][:10]
+        log.info("Top features:")
+        for i in top_idx:
+            arrow = '↑' if scores[i] > 0 else '↓'
+            log.info(f"  {arrow} {feature_cols[i]:30s} {scores[i]:+.4f}")
+    except Exception as e:
+        log.warning(f"Attribution explain skipped: {e}")
+
+
+# ── Exchange helpers ───────────────────────────────────────────────────────────
+def get_balance(exchange) -> float:
+    bal = exchange.fetch_balance({'type': 'future'})
+    return float(bal.get('USDT', {}).get('free', 0))
+
+def get_price(exchange) -> float:
+    return float(exchange.fetch_ticker(SYMBOL)['last'])
+
+def check_stop_loss(exchange, state: dict) -> bool:
+    """Return True (and close the position) if unrealized loss exceeds STOP_LOSS_PCT."""
+    if state['direction'] == 0 or not state.get('entry_price'):
+        return False
+    price   = get_price(exchange)
+    ep      = state['entry_price']
+    pnl_pct = (price - ep) / ep * state['direction']
+    if pnl_pct < -STOP_LOSS_PCT:
+        side_str = 'LONG' if state['direction'] == 1 else 'SHORT'
+        msg = (f"STOP-LOSS triggered on {side_str} | "
+               f"entry={ep:,.0f}  now={price:,.0f}  loss={pnl_pct*100:+.2f}%")
+        log.warning(msg)
+        tg_send(f"🚨 {msg}")
+        close_position(exchange, state)
+        return True
+    return False
+
+
+def close_position(exchange, state: dict):
+    if state['direction'] == 0 or state['amount_btc'] == 0:
+        return
+    amt      = state['amount_btc']
+    price    = get_price(exchange)
+    ep       = state.get('entry_price') or price
+    pnl_pct  = (price - ep) / ep * state['direction'] * 100
+    side_str = 'LONG' if state['direction'] == 1 else 'SHORT'
+
+    try:
+        params = {'reduceOnly': True}
+        if state['direction'] == 1:
+            exchange.create_market_sell_order(SYMBOL, amt, params=params)
+        else:
+            exchange.create_market_buy_order(SYMBOL, amt, params=params)
+        msg = f"CLOSED {side_str} | {amt} BTC | PnL {pnl_pct:+.2f}%"
+        log.info(msg)
+        tg_send(f"🔒 {msg}")
+    except Exception as e:
+        log.error(f"Failed to close position: {e}")
+
+def open_position(exchange, direction: int, balance: float):
+    if direction == 0:
+        return 0.0, 0.0
+    price    = get_price(exchange)
+    usdt     = balance * MAX_POS_PCT
+    amount   = max(round(usdt / price, 3), 0.001)  # min 0.001 BTC
+    side_str = 'LONG' if direction == 1 else 'SHORT'
+
+    try:
+        if direction == 1:
+            exchange.create_market_buy_order(SYMBOL, amount)
+        else:
+            exchange.create_market_sell_order(SYMBOL, amount)
+        msg = (f"OPENED {side_str} | {amount} BTC @ ~{price:,.0f} USDT "
+               f"(${usdt:,.0f} = {MAX_POS_PCT*100:.0f}% balance)")
+        log.info(msg)
+        tg_send(f"{'🟢' if direction == 1 else '🔴'} {msg}")
+        return amount, price
+    except Exception as e:
+        log.error(f"Failed to open position: {e}")
+        return 0.0, price
+
+
+# ── Main loop ─────────────────────────────────────────────────────────────────
+def main():
+    # ── Load model ──
+    for p in (MODEL_PATH, SCALER_PATH):
+        if not Path(p).exists():
+            sys.exit(f"[ERROR] {p} not found — run train_wf.py first.")
+
+    ckpt  = torch.load(MODEL_PATH, map_location='cpu', weights_only=False)
+    cfg   = ckpt['config']
+    model = TransformerPredictor(
+        cfg['n_features'], cfg['d_model'], cfg['nhead'],
+        cfg['num_layers'], cfg['dropout'], cfg['seq_len'],
+    )
+    model.load_state_dict(ckpt['model_state'])
+    model.eval()
+
+    scaler       = joblib.load(SCALER_PATH)
+    feature_cols = cfg['feature_cols']
+    seq_len      = cfg['seq_len']
+
+    log.info(f"Model  : {MODEL_PATH}  ({cfg['n_features']} features, seq_len={seq_len})")
+
+    # ── Exchange ──
+    exchange = ccxt.binance({
+        'apiKey':  os.getenv('BINANCE_API_KEY', ''),
+        'secret':  os.getenv('BINANCE_SECRET_KEY', ''),
+        'enableRateLimit': True,
+        'options': {'defaultType': 'future'},
+    })
+    exchange.enable_demo_trading(True)
+
+    exchange_pub = ccxt.binance({'enableRateLimit': True})  # no auth for data
+
+    log.info("Exchange: Binance Futures (DEMO MODE)")
+    log.info(
+        f"Config  : max_pos={MAX_POS_PCT*100:.0f}%  "
+        f"min_hold={MIN_HOLD_HOURS}h  "
+        f"threshold={THRESHOLD}"
+    )
+
+    state = load_state()
+    log.info(
+        f"State   : dir={state['direction']}  "
+        f"entry={state.get('entry_time', '—')}"
+    )
+
+    # ── Main loop ──
+    while True:
+        tick_start = time.time()
+        now        = datetime.utcnow()
+        log.info(f"\n{'='*55}")
+        log.info(f"  {now.strftime('%Y-%m-%d %H:%M UTC')}")
+        log.info(f"{'='*55}")
+
+        try:
+            # 1. Fetch data + run inference
+            log.info("Fetching market data ...")
+            df = fetch_tick_data(exchange_pub)
+            prob, direction = predict(model, scaler, df, feature_cols, seq_len)
+            dir_label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}[direction]
+            log.info(
+                f"Signal  : {dir_label}  "
+                f"(prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)"
+            )
+            explain_prediction(model, scaler, df, feature_cols, seq_len)
+
+            # 2. Stop-loss check (overrides min-hold)
+            if check_stop_loss(exchange, state):
+                state.update(_DEFAULT_STATE.copy())
+                save_state(state)
+
+            # 3. Check min-hold
+            locked = False
+            if state['direction'] != 0 and state.get('entry_time'):
+                held_h  = (now - datetime.fromisoformat(state['entry_time'])
+                           ).total_seconds() / 3600
+                remain  = max(0, MIN_HOLD_HOURS - held_h)
+                log.info(f"Held    : {held_h:.1f}h  |  Lock remaining: {remain:.1f}h")
+                if remain > 0 and direction != state['direction']:
+                    log.info("Min-hold active — maintaining current position")
+                    locked = True
+
+            # 4. Execute trade if signal changed and not locked
+            if not locked and direction != state['direction']:
+                balance = get_balance(exchange)
+                log.info(f"Balance : {balance:,.2f} USDT")
+
+                # Close existing position first
+                if state['direction'] != 0:
+                    close_position(exchange, state)
+                    state.update(_DEFAULT_STATE.copy())
+                    save_state(state)
+                    time.sleep(1)
+
+                # Open new position
+                if direction != 0:
+                    amt, price = open_position(exchange, direction, balance)
+                    state.update({
+                        'direction':   direction,
+                        'amount_btc':  amt,
+                        'entry_time':  now.isoformat(),
+                        'entry_price': price,
+                    })
+                    save_state(state)
+                else:
+                    log.info("Signal is FLAT — staying out of market")
+                    save_state(state)
+
+            else:
+                cur = state['direction']
+                cur_label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}[cur]
+                log.info(f"No action — holding {cur_label}")
+
+            # 每小時發送持倉狀態
+            try:
+                cur_price = get_price(exchange)
+                balance   = get_balance(exchange)
+                if state['direction'] != 0 and state.get('entry_price'):
+                    ep      = state['entry_price']
+                    amt     = state['amount_btc']
+                    pnl_pct = (cur_price - ep) / ep * state['direction'] * 100
+                    held_h  = (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
+                    dir_label = '🟢 LONG' if state['direction'] == 1 else '🔴 SHORT'
+                    status_msg = (
+                        f"📋 <b>每小時持倉報告</b>\n"
+                        f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                        f"方向：{dir_label}\n"
+                        f"數量：{amt} BTC\n"
+                        f"進場價：{ep:,.2f} USDT\n"
+                        f"現價：{cur_price:,.2f} USDT\n"
+                        f"未實現盈虧：{pnl_pct:+.2f}%\n"
+                        f"持倉時間：{held_h:.1f} 小時\n"
+                        f"帳戶餘額：{balance:,.2f} USDT"
+                    )
+                else:
+                    status_msg = (
+                        f"📋 <b>每小時持倉報告</b>\n"
+                        f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                        f"方向：⚪ 空倉\n"
+                        f"帳戶餘額：{balance:,.2f} USDT"
+                    )
+                tg_send(status_msg)
+            except Exception as e:
+                log.warning(f"Status report error: {e}")
+
+        except KeyboardInterrupt:
+            log.info("Bot stopped by user.")
+            tg_send("⚠️ Bot stopped by user.")
+            break
+        except Exception as e:
+            log.error(f"Tick error: {e}", exc_info=True)
+            tg_send(f"❌ Tick error: {e}")
+
+        # Sleep until next hour
+        elapsed    = time.time() - tick_start
+        sleep_time = max(0, INTERVAL_SECS - elapsed)
+        log.info(f"Next tick in {sleep_time / 60:.0f} min")
+        time.sleep(sleep_time)
+
+
+if __name__ == '__main__':
+    main()
