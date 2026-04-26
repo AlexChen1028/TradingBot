@@ -26,6 +26,20 @@ services:
       - ./eth_state.json:/app/eth_state.json
       - ./eth_bot.log:/app/eth_bot.log
 
+  sol-bot:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - SYMBOL=SOL
+      - MULTI_TF=false
+    volumes:
+      - ./sol_model_wf.pt:/app/sol_model_wf.pt
+      - ./sol_scaler_wf.pkl:/app/sol_scaler_wf.pkl
+      - ./sol_state.json:/app/sol_state.json
+      - ./sol_bot.log:/app/sol_bot.log
+
   coin-monitor:
     build: .
     restart: always

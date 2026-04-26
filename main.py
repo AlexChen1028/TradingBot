@@ -45,10 +45,13 @@ SYMBOL         = f'{_COIN}/USDT:USDT'                        # futures symbol
 SPOT_SYMBOL    = f'{_COIN}/USDT'                             # for OHLCV fetch
 LONG_FLAT_ONLY = os.getenv('LONG_FLAT_ONLY', 'false').lower() == 'true'
 
-MODEL_PATH  = f'{_COIN.lower()}_model_wf.pt'
-SCALER_PATH = f'{_COIN.lower()}_scaler_wf.pkl'
-STATE_FILE  = f'{_COIN.lower()}_state.json'
-LOG_FILE    = f'{_COIN.lower()}_bot.log'
+MODEL_PATH    = f'{_COIN.lower()}_model_wf.pt'
+SCALER_PATH   = f'{_COIN.lower()}_scaler_wf.pkl'
+MODEL_4H_PATH = f'{_COIN.lower()}_4h_model_wf.pt'
+SCALER_4H_PATH= f'{_COIN.lower()}_4h_scaler_wf.pkl'
+STATE_FILE    = f'{_COIN.lower()}_state.json'
+LOG_FILE      = f'{_COIN.lower()}_bot.log'
+MULTI_TF      = os.getenv('MULTI_TF', 'true').lower() == 'true'
 
 MAX_POS_PCT    = float(os.getenv('MAX_POS_PCT', '0.05'))  # 保證金佔餘額比例
 MIN_HOLD_HOURS = 6
@@ -144,11 +147,13 @@ def save_state(s: dict):
 
 
 # ── Data fetch ────────────────────────────────────────────────────────────────
-def fetch_tick_data(exchange_pub, feature_cols: list) -> pd.DataFrame:
+def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> pd.DataFrame:
+    tf_hours  = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}.get(timeframe, 1)
+    bars_day  = 24 // tf_hours
     since = (datetime.utcnow() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
-    limit = (LOOKBACK_DAYS + 5) * 24
+    limit = (LOOKBACK_DAYS + 5) * bars_day
 
-    raw  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, '1h', limit=limit)
+    raw  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, timeframe, limit=limit)
     ohlcv = pd.DataFrame(raw, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
     ohlcv['ts'] = pd.to_datetime(ohlcv['ts'], unit='ms').dt.tz_localize(None)
 
@@ -520,8 +525,25 @@ def main():
     feature_cols = cfg['feature_cols']
     seq_len      = cfg['seq_len']
 
+    # ── 選擇性載入 4h 模型 ──
+    model_4h = scaler_4h = feature_cols_4h = seq_len_4h = None
+    if MULTI_TF and Path(MODEL_4H_PATH).exists() and Path(SCALER_4H_PATH).exists():
+        ckpt4  = torch.load(MODEL_4H_PATH, map_location='cpu', weights_only=False)
+        cfg4   = ckpt4['config']
+        model_4h = TransformerPredictor(
+            cfg4['n_features'], cfg4['d_model'], cfg4['nhead'],
+            cfg4['num_layers'], cfg4['dropout'], cfg4['seq_len'],
+        )
+        model_4h.load_state_dict(ckpt4['model_state'])
+        model_4h.eval()
+        scaler_4h      = joblib.load(SCALER_4H_PATH)
+        feature_cols_4h = cfg4['feature_cols']
+        seq_len_4h     = cfg4['seq_len']
+        log.info(f"4h Model: {MODEL_4H_PATH}  ({cfg4['n_features']} features)")
+
     mode_str = 'Long/Flat' if LONG_FLAT_ONLY else 'Long/Short'
-    log.info(f"Coin   : {_COIN}  ({mode_str} mode)")
+    mtf_str  = ' + 4h confirm' if model_4h else ''
+    log.info(f"Coin   : {_COIN}  ({mode_str}{mtf_str})")
     log.info(f"Model  : {MODEL_PATH}  ({cfg['n_features']} features, seq_len={seq_len})")
 
     exchange = ccxt.binance({
@@ -562,11 +584,22 @@ def main():
                 continue
 
             log.info("Fetching market data ...")
-            df = fetch_tick_data(exchange_pub, feature_cols)
-            prob, direction = predict(model, scaler, df, feature_cols, seq_len)
-            regime    = detect_regime(df)
-            dir_label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}[direction]
-            log.info(f"Signal  : {dir_label}  (prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)")
+            df   = fetch_tick_data(exchange_pub, feature_cols, timeframe='1h')
+            prob, dir_1h = predict(model, scaler, df, feature_cols, seq_len)
+            regime = detect_regime(df)
+
+            # 多時框確認
+            if model_4h is not None:
+                df_4h = fetch_tick_data(exchange_pub, feature_cols_4h, timeframe='4h')
+                prob_4h, dir_4h = predict(model_4h, scaler_4h, df_4h, feature_cols_4h, seq_len_4h)
+                direction = dir_1h if dir_1h == dir_4h else 0
+                log.info(f"1h Signal : {dir_1h} (prob={prob:.4f})")
+                log.info(f"4h Signal : {dir_4h} (prob={prob_4h:.4f})")
+                log.info(f"Combined  : {direction}  ({'AGREE ✅' if dir_1h == dir_4h else 'DISAGREE ⚪'})")
+            else:
+                direction = dir_1h
+                log.info(f"Signal  : {direction}  (prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)")
+
             log.info(f"Regime  : {regime}")
             explain_prediction(model, scaler, df, feature_cols, seq_len)
 

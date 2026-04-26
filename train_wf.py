@@ -394,7 +394,9 @@ def main():
     coin      = args.symbol
     tf        = args.timeframe
     is_btc    = coin.upper().startswith('BTC')
-    prefix    = f"{coin.split('/')[0].lower()}_{tf.replace('h','h').replace('d','d')}"
+    # 1h 用純幣名（向後相容），非 1h 加上時框後綴
+    _base     = coin.split('/')[0].lower()
+    prefix    = _base if tf == '1h' else f"{_base}_{tf}"
     ohlcv     = fetch_btc(symbol=coin, timeframe=tf, since_iso=f"{args.since}T00:00:00Z")
     mkt       = fetch_us_market(start=args.since)
     fng       = fetch_fear_greed()
