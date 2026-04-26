@@ -51,6 +51,8 @@ matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 # ── Args ──────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument('--symbol',       type=str,   default='BTC/USDT')
+parser.add_argument('--timeframe',    type=str,   default='1h',
+                    help='Candle timeframe: 1h, 4h, 1d')
 parser.add_argument('--train_months', type=int,   default=18)
 parser.add_argument('--test_months',  type=int,   default=3)
 parser.add_argument('--step_months',  type=int,   default=3)
@@ -379,7 +381,7 @@ def plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin='BTC/USDT'):
     for ax in (ax1, ax2, ax3):
         plt.setp(ax.get_xticklabels(), visible=False)
 
-    out = f'{coin.split("/")[0].lower()}_backtest_wf.png'
+    out = f'{prefix}_backtest_wf.png'
     plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='#0d1117')
     print(f"Chart saved -> {out}")
     plt.show()
@@ -388,20 +390,22 @@ def plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin='BTC/USDT'):
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     # ── fetch all data once ──
-    coin     = args.symbol  # e.g. 'BTC/USDT' or 'ETH/USDT'
-    is_btc   = coin.upper().startswith('BTC')
-    ohlcv    = fetch_btc(symbol=coin, since_iso=f"{args.since}T00:00:00Z")
-    mkt      = fetch_us_market(start=args.since)
-    fng      = fetch_fear_greed()
-    fr       = fetch_funding_rate(symbol=f"{coin}:USDT")
-    news     = fetch_news_sentiment()
-    df       = merge_context(ohlcv, mkt, fng, fr, news)
+    coin      = args.symbol
+    tf        = args.timeframe
+    is_btc    = coin.upper().startswith('BTC')
+    prefix    = f"{coin.split('/')[0].lower()}_{tf.replace('h','h').replace('d','d')}"
+    ohlcv     = fetch_btc(symbol=coin, timeframe=tf, since_iso=f"{args.since}T00:00:00Z")
+    mkt       = fetch_us_market(start=args.since)
+    fng       = fetch_fear_greed()
+    fr        = fetch_funding_rate(symbol=f"{coin}:USDT")
+    news      = fetch_news_sentiment()
+    df        = merge_context(ohlcv, mkt, fng, fr, news)
 
-    # For non-BTC coins fetch BTC as cross-asset reference
+    # For non-BTC coins fetch BTC as cross-asset reference (always 1h for alignment)
     ref_btc = None
     if not is_btc:
         print("[Cross-asset] Fetching BTC/USDT as reference ...")
-        ref_btc = fetch_btc(symbol='BTC/USDT', since_iso=f"{args.since}T00:00:00Z")
+        ref_btc = fetch_btc(symbol='BTC/USDT', timeframe='1h', since_iso=f"{args.since}T00:00:00Z")
 
     df = add_features(df, ref_btc=ref_btc,
                       target_ahead=args.target_ahead,
@@ -506,21 +510,23 @@ def main():
 
     # save final model (trained on last window's full training data)
     print("\nSaving final model (last window) ...")
+    model_file  = f'{prefix}_model_wf.pt'
+    scaler_file = f'{prefix}_scaler_wf.pkl'
     torch.save({
         'model_state': model.state_dict(),
         'config': {
-            'n_features': len(feature_cols),
-            'd_model': D_MODEL, 'nhead': NHEAD,
-            'num_layers': N_LAYERS, 'dropout': DROPOUT,
-            'seq_len': SEQ_LEN, 'target_ahead': TARGET_AHEAD,
+            'n_features':  len(feature_cols),
+            'd_model':     D_MODEL, 'nhead': NHEAD,
+            'num_layers':  N_LAYERS, 'dropout': DROPOUT,
+            'seq_len':     SEQ_LEN, 'target_ahead': args.target_ahead,
             'feature_cols': feature_cols,
+            'timeframe':   tf,
         },
-    }, f'{coin.split("/")[0].lower()}_model_wf.pt')
-    joblib.dump(scaler, f'{coin.split("/")[0].lower()}_scaler_wf.pkl')
-    prefix = coin.split("/")[0].lower()
-    print(f"Saved: {prefix}_model_wf.pt  {prefix}_scaler_wf.pkl")
+    }, model_file)
+    joblib.dump(scaler, scaler_file)
+    print(f"Saved: {model_file}  {scaler_file}")
 
-    plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin=coin)
+    plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin=f"{coin} {tf}")
 
 
 if __name__ == '__main__':
