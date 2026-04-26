@@ -211,6 +211,32 @@ def get_balance(exchange) -> float:
 def get_price(exchange) -> float:
     return float(exchange.fetch_ticker(SYMBOL)['last'])
 
+def check_preemptive_reversal(exchange, state: dict, model_direction: int) -> bool:
+    """
+    若模型信號已反轉，且目前虧損超過 SL 距離的一半，
+    提前平倉避免被止損，並準備反向開單。
+    """
+    if state['direction'] == 0 or not state.get('entry_price'):
+        return False
+    if state['direction'] == model_direction:
+        return False  # 模型方向未變，不翻倉
+    price      = get_price(exchange)
+    ep         = state['entry_price']
+    loss_pct   = (price - ep) / ep * state['direction']  # 正=獲利，負=虧損
+    threshold  = -(SL_PCT * 0.5)  # 虧損超過止損距離一半才觸發
+    if loss_pct < threshold:
+        side = 'LONG' if state['direction'] == 1 else 'SHORT'
+        next_label = {1: '🟢 做多', -1: '🔴 做空', 0: '⚪ 空倉'}[model_direction]
+        msg = (f"[{_COIN}] ⚠️ 提前翻倉 | {side} 虧損 {loss_pct*100*LEVERAGE:+.1f}% (margin)\n"
+               f"避免被止損，反向開 {next_label}")
+        log.info(msg)
+        tg_send(msg)
+        cancel_sltp(exchange, state)
+        close_position(exchange, state)
+        return True
+    return False
+
+
 def check_sltp_triggered(exchange, state: dict, next_direction: int = 0) -> bool:
     """偵測交易所止損/止盈是否已觸發（倉位被清零）。"""
     if state['direction'] == 0:
@@ -380,7 +406,24 @@ def main():
             log.info(f"Signal  : {dir_label}  (prob={prob:.4f}  conf={abs(prob-0.5)*200:.1f}%)")
             explain_prediction(model, scaler, df, feature_cols, seq_len)
 
-            # 1. 偵測交易所 SL/TP 是否已觸發
+            # 1a. 提前翻倉（震盪偵測）
+            if check_preemptive_reversal(exchange, state, model_direction=direction):
+                state.update(_DEFAULT_STATE.copy())
+                save_state(state)
+                if direction != 0:
+                    balance = get_balance(exchange)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance)
+                    state.update({
+                        'direction':   direction,
+                        'amount_coin': amt,
+                        'entry_time':  now.isoformat(),
+                        'entry_price': price,
+                        'sl_order_id': sl_id,
+                        'tp_order_id': tp_id,
+                    })
+                    save_state(state)
+
+            # 1b. 偵測交易所 SL/TP 是否已觸發
             if check_sltp_triggered(exchange, state, next_direction=direction):
                 prev_dir = state['direction']
                 state.update(_DEFAULT_STATE.copy())
