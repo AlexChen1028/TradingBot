@@ -165,10 +165,11 @@ def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> 
     df = merge_context(ohlcv, mkt, fng, fr, news)
 
     # Fetch BTC reference data if model uses cross-asset features
+    # Always use 1h limit regardless of main timeframe to cover full LOOKBACK_DAYS
     ref_btc = None
     if any(c in feature_cols for c in ETH_EXTRA_COLS):
         log.info("Fetching BTC reference data for cross-asset features ...")
-        raw_btc = exchange_pub.fetch_ohlcv('BTC/USDT', '1h', limit=limit)
+        raw_btc = exchange_pub.fetch_ohlcv('BTC/USDT', '1h', limit=(LOOKBACK_DAYS + 5) * 24)
         ref_btc = pd.DataFrame(raw_btc, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
         ref_btc['ts'] = pd.to_datetime(ref_btc['ts'], unit='ms').dt.tz_localize(None)
 
