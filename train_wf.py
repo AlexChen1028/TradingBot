@@ -62,6 +62,11 @@ parser.add_argument('--threshold',    type=float, default=0.50)
 parser.add_argument('--min_hold',     type=int,   default=24)
 parser.add_argument('--sizing',       type=str,   default='kelly',
                     choices=['fixed','kelly','half_kelly'])
+parser.add_argument('--d_model',      type=int,   default=128)
+parser.add_argument('--nhead',        type=int,   default=8)
+parser.add_argument('--n_layers',     type=int,   default=3)
+parser.add_argument('--seq_len',      type=int,   default=60)
+parser.add_argument('--dropout',      type=float, default=0.2)
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -70,11 +75,11 @@ if device.type == 'cuda':
     print(f"  GPU : {torch.cuda.get_device_name(0)}")
 
 HOURS_PER_MONTH = 24 * 30   # approximate
-SEQ_LEN  = 60
-D_MODEL  = 128
-NHEAD    = 8
-N_LAYERS = 3
-DROPOUT  = 0.2
+SEQ_LEN  = args.seq_len
+D_MODEL  = args.d_model
+NHEAD    = args.nhead
+N_LAYERS = args.n_layers
+DROPOUT  = args.dropout
 LR       = 3e-4
 LR_MIN   = 1e-5
 LABEL_SMOOTH = 0.1
