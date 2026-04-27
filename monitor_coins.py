@@ -8,8 +8,7 @@ import os, json, time, ccxt, requests, numpy as np, pandas as pd
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-TZ_OFFSET = timezone(timedelta(hours=8))
-def now8(): return datetime.now(TZ_OFFSET)
+def now8(): return datetime.utcnow() + timedelta(hours=8)
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 SCAN_INTERVAL        = 15 * 60      # 每 15 分鐘掃一次信號

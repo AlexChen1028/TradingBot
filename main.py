@@ -21,12 +21,10 @@ import json
 import time
 import logging
 import warnings
-from datetime import datetime, timedelta, timezone
-
-TZ_OFFSET = timezone(timedelta(hours=8))  # UTC+8
+from datetime import datetime, timedelta
 
 def now8() -> datetime:
-    return datetime.now(TZ_OFFSET)
+    return datetime.utcnow() + timedelta(hours=8)
 from pathlib import Path
 
 import numpy as np
