@@ -151,16 +151,37 @@ def save_state(s: dict):
 
 
 # ── Data fetch ────────────────────────────────────────────────────────────────
-def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> pd.DataFrame:
-    tf_hours  = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}.get(timeframe, 1)
-    bars_day  = 24 // tf_hours
-    since = (now8() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
-    # +200 extra bars to survive rolling(168) warmup NaN after dropna
-    limit = (LOOKBACK_DAYS + 5) * bars_day + 200
+_TF_MS = {'1h': 3600000, '4h': 14400000, '8h': 28800000, '1d': 86400000}
 
-    raw  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, timeframe, limit=limit)
+def _fetch_paginated_ohlcv(exchange, symbol, timeframe, since_ms):
+    """從 since_ms 拉到現在，分頁累積（避免 Binance 不接受大 limit）"""
+    tf_ms = _TF_MS.get(timeframe, 3600000)
+    bars, cur = [], since_ms
+    while True:
+        batch = exchange.fetch_ohlcv(symbol, timeframe, since=cur, limit=1000)
+        if not batch:
+            break
+        bars.extend(batch)
+        if len(batch) < 1000:
+            break
+        cur = batch[-1][0] + tf_ms
+    return bars
+
+
+def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> pd.DataFrame:
+    tf_hours = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}.get(timeframe, 1)
+    bars_day = 24 // tf_hours
+
+    # 需要 rolling(168) warmup + seq_len + buffer，+200 額外 bar 確保安全
+    limit     = (LOOKBACK_DAYS + 5) * bars_day + 200
+    days_back = (limit * tf_hours // 24) + 5
+    since     = (now8() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+    since_ms  = int((now8() - timedelta(days=days_back)).timestamp() * 1000)
+
+    raw   = _fetch_paginated_ohlcv(exchange_pub, SPOT_SYMBOL, timeframe, since_ms)
     ohlcv = pd.DataFrame(raw, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
     ohlcv['ts'] = pd.to_datetime(ohlcv['ts'], unit='ms').dt.tz_localize(None)
+    log.info(f"OHLCV fetched: {len(ohlcv)} {timeframe} bars  ({days_back} days back)")
 
     mkt  = fetch_us_market(start=since)
     fng  = fetch_fear_greed()
@@ -169,14 +190,14 @@ def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> 
 
     df = merge_context(ohlcv, mkt, fng, fr, news)
 
-    # Fetch BTC reference data if model uses cross-asset features
-    # Always use 1h limit regardless of main timeframe to cover full LOOKBACK_DAYS
+    # BTC reference for cross-asset features，覆蓋整個 OHLCV 時間範圍
     ref_btc = None
     if any(c in feature_cols for c in ETH_EXTRA_COLS):
-        log.info("Fetching BTC reference data for cross-asset features ...")
-        raw_btc = exchange_pub.fetch_ohlcv('BTC/USDT', '1h', limit=(LOOKBACK_DAYS + 5) * 24)
+        log.info(f"Fetching BTC reference data ({days_back} days) ...")
+        raw_btc = _fetch_paginated_ohlcv(exchange_pub, 'BTC/USDT', '1h', since_ms)
         ref_btc = pd.DataFrame(raw_btc, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
         ref_btc['ts'] = pd.to_datetime(ref_btc['ts'], unit='ms').dt.tz_localize(None)
+        log.info(f"BTC reference: {len(ref_btc)} 1h bars")
 
     df = add_features(df, ref_btc=ref_btc)
     return df
