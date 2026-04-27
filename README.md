@@ -49,6 +49,7 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 | Preemptive reversal | Flip early if model reverses + unrealised loss > 1.5% |
 | Max drawdown guard | Pause all trading if account DD ≥ 20% |
 | Correlation guard | Halve position size if BTC and ETH are in the same direction |
+| Isolated-margin guard | Detects existing cross-margin positions, force-closes them, then opens isolated |
 
 ### Altcoin Monitor (`monitor_coins.py`)
 - Scans top 20 high-volatility USDT perpetual futures every **15 minutes**
@@ -149,12 +150,13 @@ git clone https://github.com/AlexChen1028/TradingBot.git
 cd TradingBot
 cp .env.example .env        # fill in API keys and Telegram tokens
 
-# 2. Create required state files
+# 2. Create required state files (must be FILES, not directories)
 printf '{}' > btc_state.json
 printf '{}' > eth_state.json
 printf '{}' > sol_state.json
 printf '{}' > positions_altcoin.json
 touch btc_bot.log eth_bot.log sol_bot.log
+touch btc_trades.jsonl eth_trades.jsonl sol_trades.jsonl altcoin_trades.jsonl
 
 # 3. Upload trained models from local machine
 scp *_model_wf.pt *_scaler_wf.pkl root@<VPS_IP>:~/TradingBot/
@@ -166,6 +168,15 @@ docker compose up -d --build
 docker compose logs -f trading-bot
 docker compose logs -f coin-monitor
 ```
+
+### Updating after code changes
+
+```bash
+ssh root@<VPS_IP>
+cd ~/TradingBot && git pull && docker compose up -d --build
+```
+
+State files (`*_state.json`, `*_trades.jsonl`, `positions_altcoin.json`) are mounted as host volumes, so rebuilds **never lose** trade history or open positions.
 
 ---
 
@@ -191,3 +202,31 @@ The daily 7-day Telegram report aggregates all `*_trades.jsonl` files:
 - All bots run in **Binance Demo mode** by default (`DEMO_MODE=true`). Set to `false` for live trading.
 - DigitalOcean blocks `fapi.binance.com` → public market data uses the spot API (`api.binance.com`).
 - Models are **not** committed to this repo (too large). Train locally and upload to VPS via `scp`.
+- OHLCV fetch uses paginated `since`-based requests to bypass Binance's silent limit cap on recent-only fetches (avoids `Not enough data: <N> rows` errors).
+
+---
+
+## Troubleshooting
+
+**`Tick error: Not enough data: <N> rows (need <seq_len>)`**  
+Fixed in current code. Pull latest and rebuild — `git pull && docker compose up -d --build`.
+
+**Existing position is on cross margin (全倉) instead of isolated (逐倉)**  
+The `ensure_isolated_margin` guard auto-handles this on the next signal: detects the cross position, force-closes it via `reduceOnly`, switches to isolated, then opens the new trade. You'll see `⚠️ 偵測到全倉持倉，強制平倉以切換逐倉` in Telegram.
+
+**Weekly P&L report shows "尚無已完成交易記錄"**  
+Means no trades have closed since `*_trades.jsonl` files were mounted. Trade records are only written on close (signal flip / SL / TP). Wait for the next position to close.
+
+**`*_trades.jsonl` is a directory instead of a file**  
+Docker creates a directory if the file doesn't exist before `docker compose up`. Fix:
+```bash
+docker compose down
+rm -rf <bad_file>
+touch <bad_file>
+docker compose up -d --build
+```
+
+**Telegram bot not posting to group**  
+1. Verify both bots are members of the group
+2. Group `chat_id` starts with `-` (negative number)
+3. After updating `.env`, run `docker compose down && docker compose up -d` (`restart` won't reload env)
