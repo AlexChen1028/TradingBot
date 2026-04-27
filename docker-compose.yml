@@ -13,6 +13,7 @@ services:
       - ./btc_4h_scaler_wf.pkl:/app/btc_4h_scaler_wf.pkl
       - ./btc_state.json:/app/btc_state.json
       - ./btc_bot.log:/app/btc_bot.log
+      - ./btc_trades.jsonl:/app/btc_trades.jsonl
 
   eth-bot:
     build: .
@@ -29,6 +30,7 @@ services:
       - ./eth_4h_scaler_wf.pkl:/app/eth_4h_scaler_wf.pkl
       - ./eth_state.json:/app/eth_state.json
       - ./eth_bot.log:/app/eth_bot.log
+      - ./eth_trades.jsonl:/app/eth_trades.jsonl
 
   sol-bot:
     build: .
@@ -43,6 +45,7 @@ services:
       - ./sol_scaler_wf.pkl:/app/sol_scaler_wf.pkl
       - ./sol_state.json:/app/sol_state.json
       - ./sol_bot.log:/app/sol_bot.log
+      - ./sol_trades.jsonl:/app/sol_trades.jsonl
 
   coin-monitor:
     build: .
@@ -53,4 +56,9 @@ services:
       - ./monitor_coins.py:/app/monitor_coins.py
       - ./scan_coins.py:/app/scan_coins.py
       - ./positions_altcoin.json:/app/positions_altcoin.json
+      - ./altcoin_trades.jsonl:/app/altcoin_trades.jsonl
+      # 讓 coin-monitor 也能讀到三隻主力的交易記錄，產生彙總週報
+      - ./btc_trades.jsonl:/app/btc_trades.jsonl
+      - ./eth_trades.jsonl:/app/eth_trades.jsonl
+      - ./sol_trades.jsonl:/app/sol_trades.jsonl
     command: python -u monitor_coins.py
