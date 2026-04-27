@@ -21,7 +21,12 @@ import json
 import time
 import logging
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+TZ_OFFSET = timezone(timedelta(hours=8))  # UTC+8
+
+def now8() -> datetime:
+    return datetime.now(TZ_OFFSET)
 from pathlib import Path
 
 import numpy as np
@@ -150,7 +155,7 @@ def save_state(s: dict):
 def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> pd.DataFrame:
     tf_hours  = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}.get(timeframe, 1)
     bars_day  = 24 // tf_hours
-    since = (datetime.utcnow() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
+    since = (now8() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
     limit = (LOOKBACK_DAYS + 5) * bars_day
 
     raw  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, timeframe, limit=limit)
@@ -337,7 +342,7 @@ def log_trade(state: dict, close_price: float, reason: str):
         'amount':      amt,
         'pnl_usdt':    round(pnl_usdt, 4),
         'entry_time':  state.get('entry_time'),
-        'close_time':  datetime.utcnow().isoformat(),
+        'close_time':  now8().isoformat(),
         'reason':      reason,
     }
     with open(f'{_COIN.lower()}_trades.jsonl', 'a', encoding='utf-8') as f:
@@ -501,7 +506,7 @@ def handle_heartbeat(state: dict, now: datetime):
     if last is None or (now - datetime.fromisoformat(last)).total_seconds() >= 86400:
         tg_send(
             f"💚 <b>[{_COIN}] Bot 健康檢查</b>\n"
-            f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"⏰ {now.strftime('%Y-%m-%d %H:%M +08')}\n"
             f"✅ 運行正常，每 24h 發送一次"
         )
         state['last_heartbeat'] = now.isoformat()
@@ -567,9 +572,9 @@ def main():
 
     while True:
         tick_start = time.time()
-        now        = datetime.utcnow()
+        now        = now8()
         log.info(f"\n{'='*55}")
-        log.info(f"  [{_COIN}] {now.strftime('%Y-%m-%d %H:%M UTC')}")
+        log.info(f"  [{_COIN}] {now.strftime('%Y-%m-%d %H:%M +08')}")
         log.info(f"{'='*55}")
 
         try:
@@ -693,7 +698,7 @@ def main():
                     dir_emoji = '🟢 LONG' if state['direction'] == 1 else '🔴 SHORT'
                     tg_send(
                         f"📋 <b>[{_COIN}] 每小時持倉報告</b>\n"
-                        f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                        f"⏰ {now.strftime('%Y-%m-%d %H:%M +08')}\n\n"
                         f"方向：{dir_emoji} {LEVERAGE}x 逐倉\n"
                         f"數量：{amt} {_COIN}\n"
                         f"進場價：{ep:,.2f} USDT\n"
@@ -706,7 +711,7 @@ def main():
                 else:
                     tg_send(
                         f"📋 <b>[{_COIN}] 每小時持倉報告</b>\n"
-                        f"⏰ {now.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                        f"⏰ {now.strftime('%Y-%m-%d %H:%M +08')}\n\n"
                         f"方向：⚪ 空倉\n"
                         f"帳戶餘額：{balance:,.2f} USDT"
                     )

@@ -5,8 +5,11 @@
 """
 
 import os, json, time, ccxt, requests, numpy as np, pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+TZ_OFFSET = timezone(timedelta(hours=8))
+def now8(): return datetime.now(TZ_OFFSET)
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 SCAN_INTERVAL        = 15 * 60      # 每 15 分鐘掃一次信號
@@ -57,7 +60,7 @@ def get_top_coins(exchange):
                if m.get('quote') == 'USDT' and m.get('type') in ('swap', 'future')
                and m.get('active') and ':USDT' in s]
 
-    since = int((datetime.utcnow() - timedelta(days=185)).timestamp() * 1000)
+    since = int((datetime.now(timezone.utc) - timedelta(days=185)).timestamp() * 1000)
     results = []
     for sym in symbols:
         try:
@@ -188,7 +191,7 @@ def open_pos(exchange, symbol, direction, positions):
         positions[symbol] = {
             'direction':   direction,
             'entry_price': price,
-            'entry_time':  datetime.utcnow().isoformat(),
+            'entry_time':  now8().isoformat(),
             'peak_price':  price,
             'amount':      amount,
         }
@@ -219,7 +222,7 @@ def close_pos(exchange, symbol, positions, reason):
 
 # ── 倉位檢查 ──────────────────────────────────────────────────────────────────
 def check_positions(exchange, positions):
-    now = datetime.utcnow()
+    now = now8()
     for symbol in list(positions.keys()):
         pos = positions[symbol]
         try:
@@ -264,7 +267,7 @@ def send_leaderboard(exchange, top_n=10):
         df = pd.DataFrame(rows).sort_values('pct', ascending=False)
         g  = df.head(top_n)
         l  = df.tail(top_n).iloc[::-1]
-        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+        now = now8().strftime('%Y-%m-%d %H:%M +08')
         g_lines = '\n'.join(f"  🟢 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in g.iterrows())
         l_lines = '\n'.join(f"  🔴 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in l.iterrows())
         tg(
@@ -278,7 +281,7 @@ def send_leaderboard(exchange, top_n=10):
 
 # ── 主迴圈 ────────────────────────────────────────────────────────────────────
 def scan(exchange_pub, exchange_priv, watch_coins, positions):
-    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    now = now8().strftime('%Y-%m-%d %H:%M +08')
     print(f"\n[{now}] 掃描 {len(watch_coins)} 個幣種  倉位 {len(positions)}/{MAX_POSITIONS}")
 
     if positions:
