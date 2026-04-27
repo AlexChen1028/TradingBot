@@ -253,23 +253,26 @@ def send_leaderboard(exchange, top_n=10):
         rows = [
             {'symbol': s.split('/')[0], 'pct': t.get('percentage')}
             for s, t in tickers.items()
-            if s.endswith(':USDT') and t.get('percentage') is not None
+            if s.endswith('/USDT')          # 用 spot 幣（不被 IP 封鎖）
+            and not s.endswith(':USDT')
+            and t.get('percentage') is not None
             and (t.get('quoteVolume') or 0) >= 5_000_000
         ]
         if not rows:
+            print("  漲跌幅榜：無資料")
             return
-        df  = pd.DataFrame(rows).sort_values('pct', ascending=False)
-        g   = df.head(top_n)
-        l   = df.tail(top_n).iloc[::-1]
+        df = pd.DataFrame(rows).sort_values('pct', ascending=False)
+        g  = df.head(top_n)
+        l  = df.tail(top_n).iloc[::-1]
         now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
         g_lines = '\n'.join(f"  🟢 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in g.iterrows())
         l_lines = '\n'.join(f"  🔴 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in l.iterrows())
         tg(
-            f"📊 <b>Binance 永續合約漲跌榜</b>\n⏰ {now}\n\n"
+            f"📊 <b>Binance 現貨漲跌榜（24h）</b>\n⏰ {now}\n\n"
             f"🏆 <b>漲幅前 {top_n} 名</b>\n{g_lines}\n\n"
             f"💀 <b>跌幅前 {top_n} 名</b>\n{l_lines}"
         )
-        print("  → 漲跌幅榜已發送")
+        print(f"  → 漲跌幅榜已發送（{len(rows)} 幣種）")
     except Exception as e:
         print(f"  漲跌幅榜錯誤：{e}")
 
@@ -291,10 +294,7 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions):
         time.sleep(0.15)
 
 def main():
-    exchange_pub  = ccxt.binance({
-        'enableRateLimit': True,
-        'options': {'defaultType': 'future'},
-    })
+    exchange_pub  = ccxt.binance({'enableRateLimit': True})
     exchange_priv = ccxt.binance({
         'apiKey':          os.getenv('BINANCE_API_KEY', ''),
         'secret':          os.getenv('BINANCE_SECRET_KEY', ''),
