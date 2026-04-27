@@ -230,3 +230,31 @@ docker compose up -d --build
 1. Verify both bots are members of the group
 2. Group `chat_id` starts with `-` (negative number)
 3. After updating `.env`, run `docker compose down && docker compose up -d` (`restart` won't reload env)
+
+---
+
+## Resuming Claude Code Sessions
+
+To return to a previous Claude Code conversation about this project after restart:
+
+```bash
+cd "D:\User Files\Desktop\working\crypto-bot"
+
+# Option 1: continue most recent session in this folder
+claude -c
+# or: claude --continue
+
+# Option 2: pick from a list of past sessions
+claude -r
+# or: claude --resume
+
+# Option 3: from inside an active Claude Code session
+/resume
+```
+
+Always `cd` to the project folder **before** running `claude -c`, otherwise it picks up the most recent session from a different project.
+
+Session history is stored at:
+```
+C:\Users\ASUS\.claude\projects\D--User-Files-Desktop-working-crypto-bot\
+```
