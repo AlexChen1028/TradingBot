@@ -28,7 +28,9 @@ TRAILING_PCT   = 0.15   # 追蹤止盈備援（從最佳價格回落，軟體層
 MAX_HOLD_HOURS = 48     # 最長持倉時間
 TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
-POSITIONS_FILE = 'positions_altcoin.json'
+POSITIONS_FILE    = 'positions_altcoin.json'
+ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
+TAKER_FEE     = 0.0005  # Binance futures taker fee 0.05%
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 TG_TOKEN    = os.getenv('MONITOR_TOKEN',   '')
@@ -54,6 +56,104 @@ def load_positions():
 
 def save_positions(pos):
     Path(POSITIONS_FILE).write_text(json.dumps(pos, indent=2))
+
+# ── 交易記錄 ──────────────────────────────────────────────────────────────────
+def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry_time, reason):
+    pnl_usdt = amount * (close_price - entry_price) * direction
+    fee_usdt = amount * (entry_price + close_price) * TAKER_FEE
+    record = {
+        'coin':         symbol.split('/')[0],
+        'direction':    direction,
+        'entry_price':  entry_price,
+        'close_price':  close_price,
+        'amount':       amount,
+        'pnl_usdt':     round(pnl_usdt, 4),
+        'fee_usdt':     round(fee_usdt, 4),
+        'net_pnl_usdt': round(pnl_usdt - fee_usdt, 4),
+        'margin_usdt':  MARGIN_USDT,
+        'entry_time':   entry_time,
+        'close_time':   now8().isoformat(),
+        'reason':       reason,
+    }
+    with open(ALTCOIN_TRADES_FILE, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(record) + '\n')
+
+
+def send_performance_report():
+    """讀取過去7天所有幣種交易記錄，計算淨利潤和報酬率，發送到TG"""
+    cutoff = now8() - timedelta(days=7)
+    trade_files = {
+        'BTC':  'btc_trades.jsonl',
+        'ETH':  'eth_trades.jsonl',
+        'SOL':  'sol_trades.jsonl',
+        '山寨': ALTCOIN_TRADES_FILE,
+    }
+
+    coin_stats = {}
+    total_gross = total_fee = total_net = total_margin = total_trades = 0
+
+    for label, fname in trade_files.items():
+        p = Path(fname)
+        if not p.exists():
+            continue
+        rows = []
+        for line in p.read_text(encoding='utf-8').splitlines():
+            if not line.strip():
+                continue
+            try:
+                r = json.loads(line)
+                if datetime.fromisoformat(r.get('close_time', '1970-01-01')) < cutoff:
+                    continue
+                rows.append(r)
+            except Exception:
+                continue
+        if not rows:
+            continue
+
+        gross  = sum(r.get('pnl_usdt', 0) for r in rows)
+        # 舊記錄若沒有 fee_usdt 欄位，自動估算
+        fee    = sum(
+            r.get('fee_usdt') if r.get('fee_usdt') is not None
+            else r.get('amount', 0) * (r.get('entry_price', 0) + r.get('close_price', 0)) * TAKER_FEE
+            for r in rows
+        )
+        net    = gross - fee
+        margin = sum(r.get('margin_usdt', MARGIN_USDT) for r in rows)
+
+        coin_stats[label] = {'n': len(rows), 'gross': gross, 'fee': fee, 'net': net, 'margin': margin}
+        total_gross  += gross
+        total_fee    += fee
+        total_net    += net
+        total_margin += margin
+        total_trades += len(rows)
+
+    if total_trades == 0:
+        tg(f"📊 <b>週績效報告（過去7天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
+        return
+
+    roi = total_net / total_margin * 100 if total_margin > 0 else 0
+    emoji = '📈' if total_net >= 0 else '📉'
+
+    coin_lines = '\n'.join(
+        f"{'🟢' if s['net'] >= 0 else '🔴'} {label:<4}  {s['n']}筆  "
+        f"淨利 <b>{s['net']:+.2f} U</b>  費 {s['fee']:.2f} U"
+        for label, s in coin_stats.items()
+    )
+
+    msg = (
+        f"{emoji} <b>週績效報告（過去7天）</b>\n"
+        f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
+        f"{coin_lines}\n\n"
+        f"總交易：{total_trades} 筆\n"
+        f"毛利潤：{total_gross:+.2f} U\n"
+        f"手續費：-{total_fee:.2f} U\n"
+        f"<b>淨利潤：{total_net:+.2f} U</b>\n"
+        f"投入保證金：{total_margin:.0f} U\n"
+        f"<b>週報酬率：{roi:+.2f}%</b>"
+    )
+    tg(msg)
+    print(f"  📊 週績效報告已發送：淨利 {total_net:+.2f} U  ROI {roi:+.2f}%")
+
 
 # ── 幣種清單更新 ──────────────────────────────────────────────────────────────
 def get_top_coins(exchange):
@@ -268,15 +368,19 @@ def close_pos(exchange, symbol, positions, reason):
         ep        = pos['entry_price']
         pnl_pct   = (price - ep) / ep * pos['direction'] * 100 * LEVERAGE
         pnl_usdt  = amt * (price - ep) * pos['direction']
+        fee_usdt  = amt * (ep + price) * TAKER_FEE
+        net_usdt  = pnl_usdt - fee_usdt
         side      = 'LONG' if pos['direction'] == 1 else 'SHORT'
         coin      = symbol.split('/')[0]
-        print(f"  🔒 平倉 {side} {coin} | PnL {pnl_pct:+.2f}% ({pnl_usdt:+.2f} U) | {reason}")
+        print(f"  🔒 平倉 {side} {coin} | 淨利 {net_usdt:+.2f} U (費 {fee_usdt:.2f} U) | {reason}")
         tg(
             f"🔒 <b>平倉 {side} {coin}</b>\n"
             f"進場：{ep:.4f} → 現價：{price:.4f}\n"
-            f"保證金盈虧：{pnl_pct:+.2f}%（{pnl_usdt:+.2f} U）\n"
-            f"原因：{reason}"
+            f"保證金盈虧：{pnl_pct:+.2f}%\n"
+            f"毛利：{pnl_usdt:+.2f} U  手續費：-{fee_usdt:.2f} U\n"
+            f"<b>淨利：{net_usdt:+.2f} U</b>  原因：{reason}"
         )
+        log_altcoin_trade(symbol, pos['direction'], ep, price, amt, pos.get('entry_time', ''), reason)
         del positions[symbol]
         save_positions(positions)
     except Exception as e:
@@ -299,18 +403,25 @@ def check_positions(exchange, positions):
                     for p in ex_pos if p.get('symbol') == symbol
                 )
                 if not still_open:
-                    ep        = pos['entry_price']
-                    pnl_pct   = (price - ep) / ep * d * 100 * LEVERAGE
-                    pnl_usdt  = pos['amount'] * (price - ep) * d
-                    side      = 'LONG' if d == 1 else 'SHORT'
-                    coin      = symbol.split('/')[0]
-                    trigger   = '🎯 止盈' if pnl_usdt > 0 else '🛑 止損'
-                    print(f"  {trigger} 交易所平倉 {side} {coin} | PnL {pnl_pct:+.2f}% ({pnl_usdt:+.2f} U)")
+                    ep       = pos['entry_price']
+                    amt      = pos['amount']
+                    pnl_usdt = amt * (price - ep) * d
+                    fee_usdt = amt * (ep + price) * TAKER_FEE
+                    net_usdt = pnl_usdt - fee_usdt
+                    pnl_pct  = (price - ep) / ep * d * 100 * LEVERAGE
+                    side     = 'LONG' if d == 1 else 'SHORT'
+                    coin     = symbol.split('/')[0]
+                    trigger  = '🎯 止盈' if pnl_usdt > 0 else '🛑 止損'
+                    reason   = f'交易所{("止盈" if pnl_usdt > 0 else "止損")}'
+                    print(f"  {trigger} 交易所平倉 {side} {coin} | 淨利 {net_usdt:+.2f} U")
                     tg(
                         f"⚡ <b>{trigger} {side} {coin}（交易所自動）</b>\n"
                         f"進場：{ep:.4f} → 現價：{price:.4f}\n"
-                        f"保證金盈虧：{pnl_pct:+.2f}%（{pnl_usdt:+.2f} U）"
+                        f"保證金盈虧：{pnl_pct:+.2f}%\n"
+                        f"毛利：{pnl_usdt:+.2f} U  手續費：-{fee_usdt:.2f} U\n"
+                        f"<b>淨利：{net_usdt:+.2f} U</b>"
                     )
+                    log_altcoin_trade(symbol, d, ep, price, amt, pos.get('entry_time', ''), reason)
                     del positions[symbol]
                     save_positions(positions)
                     continue
@@ -438,6 +549,7 @@ def main():
     watch_coins      = get_top_coins(exchange_pub)
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次
+    last_report_date = None  # 每天發一次週績效報告
 
     while True:
         try:
@@ -453,6 +565,12 @@ def main():
                 last_leaderboard = time.time()
                 if lb_candidates:
                     scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions)
+
+            # 每天 00:00 +08 發送週績效報告
+            today = now8().date()
+            if today != last_report_date:
+                send_performance_report()
+                last_report_date = today
 
             scan(exchange_pub, exchange_priv, watch_coins, positions)
 

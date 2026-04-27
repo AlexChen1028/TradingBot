@@ -329,21 +329,29 @@ def check_sltp_triggered(exchange, state: dict, next_direction: int = 0) -> bool
         log.warning(f"check_sltp_triggered error: {e}")
         return False
 
+_TAKER_FEE = 0.0005  # Binance futures taker fee 0.05%
+
 def log_trade(state: dict, close_price: float, reason: str):
     """每次平倉寫一筆 JSON 到 {coin}_trades.jsonl 供儀表板使用。"""
-    ep  = state.get('entry_price') or close_price
-    amt = state.get('amount_coin', 0)
+    ep       = state.get('entry_price') or close_price
+    amt      = state.get('amount_coin', 0)
     pnl_usdt = amt * (close_price - ep) * state['direction']
+    fee_usdt = amt * (ep + close_price) * _TAKER_FEE     # 開 + 平各一次 taker
+    net_pnl  = pnl_usdt - fee_usdt
+    margin   = amt * ep / LEVERAGE
     record = {
-        'coin':        _COIN,
-        'direction':   state['direction'],
-        'entry_price': ep,
-        'close_price': close_price,
-        'amount':      amt,
-        'pnl_usdt':    round(pnl_usdt, 4),
-        'entry_time':  state.get('entry_time'),
-        'close_time':  now8().isoformat(),
-        'reason':      reason,
+        'coin':         _COIN,
+        'direction':    state['direction'],
+        'entry_price':  ep,
+        'close_price':  close_price,
+        'amount':       amt,
+        'pnl_usdt':     round(pnl_usdt, 4),
+        'fee_usdt':     round(fee_usdt, 4),
+        'net_pnl_usdt': round(net_pnl,  4),
+        'margin_usdt':  round(margin,   4),
+        'entry_time':   state.get('entry_time'),
+        'close_time':   now8().isoformat(),
+        'reason':       reason,
     }
     with open(f'{_COIN.lower()}_trades.jsonl', 'a', encoding='utf-8') as f:
         f.write(json.dumps(record) + '\n')
