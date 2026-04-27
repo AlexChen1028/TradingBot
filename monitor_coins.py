@@ -15,7 +15,10 @@ SCAN_INTERVAL        = 15 * 60      # 每 15 分鐘掃一次信號
 UPDATE_INTERVAL      = 2  * 60 * 60 # 每 2 小時更新幣種清單
 LEADERBOARD_INTERVAL = 60 * 60      # 每小時發漲跌幅榜
 
-MIN_SIGNALS    = 3      # 至少幾個信號才進場
+MIN_SIGNALS           = 3   # 一般掃描門檻
+MIN_LEADERBOARD_SIGNALS = 2   # 漲跌幅榜幣種（寬鬆）
+LEADERBOARD_MIN_PCT   = 3.0  # 24h 漲跌超過 3% 才考慮
+LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 3      # 最多同時持有幾個倉位
 MARGIN_USDT    = 50     # 每筆保證金（USDT）
 LEVERAGE       = 20     # 槓桿倍數
@@ -250,19 +253,21 @@ def check_positions(exchange, positions):
 
 # ── 漲跌幅榜 ──────────────────────────────────────────────────────────────────
 def send_leaderboard(exchange, top_n=10):
+    """發送漲跌幅榜，並回傳符合條件的交易候選幣種 [(futures_symbol, direction, pct)]"""
+    candidates = []
     try:
         tickers = exchange.fetch_tickers()
         rows = [
             {'symbol': s.split('/')[0], 'pct': t.get('percentage')}
             for s, t in tickers.items()
-            if s.endswith('/USDT')          # 用 spot 幣（不被 IP 封鎖）
+            if s.endswith('/USDT')
             and not s.endswith(':USDT')
             and t.get('percentage') is not None
             and (t.get('quoteVolume') or 0) >= 5_000_000
         ]
         if not rows:
             print("  漲跌幅榜：無資料")
-            return
+            return candidates
         df = pd.DataFrame(rows).sort_values('pct', ascending=False)
         g  = df.head(top_n)
         l  = df.tail(top_n).iloc[::-1]
@@ -275,10 +280,42 @@ def send_leaderboard(exchange, top_n=10):
             f"💀 <b>跌幅前 {top_n} 名</b>\n{l_lines}"
         )
         print(f"  → 漲跌幅榜已發送（{len(rows)} 幣種）")
+
+        # 挑選交易候選：漲超過 3% → 做多，跌超過 3% → 做空
+        markets = exchange.markets or {}
+        top_g = df[df['pct'] >  LEADERBOARD_MIN_PCT].head(LEADERBOARD_TOP_N)
+        top_l = df[df['pct'] < -LEADERBOARD_MIN_PCT].tail(LEADERBOARD_TOP_N)
+        for _, row in pd.concat([top_g, top_l]).iterrows():
+            sym = row['symbol']
+            fut = f"{sym}/USDT:USDT"
+            direction = 1 if row['pct'] > 0 else -1
+            candidates.append((fut, direction, row['pct']))
     except Exception as e:
         print(f"  漲跌幅榜錯誤：{e}")
+    return candidates
 
 # ── 主迴圈 ────────────────────────────────────────────────────────────────────
+def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions):
+    """根據漲跌幅榜候選幣種嘗試開倉（寬鬆門檻：2 個信號）"""
+    if not candidates:
+        return
+    print(f"  📊 漲跌幅榜候選：{len(candidates)} 個幣種")
+    for symbol, lb_direction, pct in candidates:
+        if symbol in positions or len(positions) >= MAX_POSITIONS:
+            break
+        result = analyze(exchange_pub, symbol)
+        if result is None:
+            continue
+        # 寬鬆門檻：只需 2 個信號，方向由漲跌幅榜決定
+        if result['n'] >= MIN_LEADERBOARD_SIGNALS:
+            sym_name = symbol.split('/')[0]
+            dir_str  = '做多' if lb_direction == 1 else '做空'
+            print(f"  🎯 {sym_name} {pct:+.1f}% | {result['n']} 個信號 → {dir_str}")
+            tg(f"🎯 <b>漲跌幅榜進場</b>\n{sym_name} {pct:+.1f}% | {result['n']}/4 信號\n方向：{'🟢 做多' if lb_direction==1 else '🔴 做空'}")
+            open_pos(exchange_priv, symbol, lb_direction, positions)
+        time.sleep(0.2)
+
+
 def scan(exchange_pub, exchange_priv, watch_coins, positions):
     now = now8().strftime('%Y-%m-%d %H:%M +08')
     print(f"\n[{now}] 掃描 {len(watch_coins)} 個幣種  倉位 {len(positions)}/{MAX_POSITIONS}")
@@ -324,9 +361,12 @@ def main():
                     watch_coins = new_list
                     last_update = time.time()
 
+            lb_candidates = []
             if time.time() - last_leaderboard >= LEADERBOARD_INTERVAL:
-                send_leaderboard(exchange_pub)
+                lb_candidates = send_leaderboard(exchange_pub)
                 last_leaderboard = time.time()
+                if lb_candidates:
+                    scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions)
 
             scan(exchange_pub, exchange_priv, watch_coins, positions)
 
