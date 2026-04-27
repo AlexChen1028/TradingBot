@@ -412,6 +412,56 @@ def close_position(exchange, state: dict):
     except Exception as e:
         log.error(f"Failed to close position: {e}")
 
+def ensure_isolated_margin(exchange) -> bool:
+    """
+    保險：開倉前確保使用「逐倉」。
+    若已存在「全倉」倉位導致無法切換，先強制平掉再切換。
+    回傳是否成功設成 isolated。
+    """
+    # 1. 先試直接切 isolated
+    try:
+        exchange.set_margin_mode('isolated', SYMBOL)
+        return True
+    except Exception as e:
+        msg = str(e).lower()
+        if 'no need to change' in msg or 'same as' in msg:
+            return True  # 已經是 isolated
+
+    # 2. 切換失敗 → 檢查是否因為有開倉
+    try:
+        positions = exchange.fetch_positions([SYMBOL])
+        for pos in positions:
+            if pos.get('symbol') != SYMBOL:
+                continue
+            contracts = abs(pos.get('contracts') or 0)
+            if contracts <= 0:
+                continue
+            margin_mode = pos.get('marginMode', '').lower()
+            if margin_mode == 'cross' or margin_mode == 'crossed':
+                side = 'sell' if pos.get('side') == 'long' else 'buy'
+                log.warning(f"[{_COIN}] ⚠️ 偵測到全倉持倉 {contracts} {_COIN}，強制平倉以切換為逐倉")
+                tg_send(f"⚠️ [{_COIN}] 偵測到全倉持倉，強制平倉以切換逐倉（保險機制）")
+                try:
+                    exchange.create_order(SYMBOL, 'market', side, contracts, params={'reduceOnly': True})
+                    time.sleep(2)
+                except Exception as e2:
+                    log.error(f"強制平倉失敗：{e2}")
+                    return False
+    except Exception as e:
+        log.warning(f"fetch_positions 失敗：{e}")
+
+    # 3. 再試一次切 isolated
+    try:
+        exchange.set_margin_mode('isolated', SYMBOL)
+        return True
+    except Exception as e:
+        msg = str(e).lower()
+        if 'no need to change' in msg or 'same as' in msg:
+            return True
+        log.error(f"切換 isolated 失敗：{e}")
+        return False
+
+
 def open_position(exchange, direction: int, balance: float, regime: str = 'neutral'):
     if direction == 0:
         return 0.0, 0.0, None, None
@@ -434,11 +484,15 @@ def open_position(exchange, direction: int, balance: float, regime: str = 'neutr
     sl_id = tp_id = None
 
     try:
+        # 保險：強制 isolated（若有全倉持倉會先平掉）
+        if not ensure_isolated_margin(exchange):
+            log.error(f"[{_COIN}] 無法切換為逐倉，跳過本次開倉")
+            tg_send(f"❌ [{_COIN}] 無法切換為逐倉，本次開倉中止")
+            return 0.0, price, None, None
         try:
-            exchange.set_margin_mode('isolated', SYMBOL)
             exchange.set_leverage(LEVERAGE, SYMBOL, params={'marginMode': 'isolated'})
         except Exception as e:
-            log.warning(f"Margin/leverage setup: {e}")
+            log.warning(f"Leverage setup: {e}")
 
         if direction == 1:
             exchange.create_market_buy_order(SYMBOL, amount)
