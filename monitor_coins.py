@@ -36,6 +36,24 @@ TAKER_FEE     = 0.0005  # Binance futures taker fee 0.05%
 TG_TOKEN    = os.getenv('MONITOR_TOKEN',   '')
 TG_CHAT_IDS = [i.strip() for i in os.getenv('MONITOR_CHAT_ID', '').split(',') if i.strip()]
 
+# Trading Bot 1（用於週報 / P&L 通知）
+TRADING_TOKEN    = os.getenv('TELEGRAM_TOKEN',   '')
+TRADING_CHAT_IDS = [i.strip() for i in os.getenv('TELEGRAM_CHAT_ID', '').split(',') if i.strip()]
+
+def tg_trading(text):
+    """透過 Trading Bot 1 發送（週報 / 盈虧通知）"""
+    if not TRADING_TOKEN or not TRADING_CHAT_IDS:
+        return
+    for chat_id in TRADING_CHAT_IDS:
+        try:
+            requests.post(
+                f'https://api.telegram.org/bot{TRADING_TOKEN}/sendMessage',
+                json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
 def tg(text):
     if not TG_TOKEN or not TG_CHAT_IDS:
         return
@@ -128,7 +146,7 @@ def send_performance_report():
         total_trades += len(rows)
 
     if total_trades == 0:
-        tg(f"📊 <b>週績效報告（過去7天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
+        tg_trading(f"📊 <b>週績效報告（過去7天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
         return
 
     roi = total_net / total_margin * 100 if total_margin > 0 else 0
@@ -151,7 +169,7 @@ def send_performance_report():
         f"投入保證金：{total_margin:.0f} U\n"
         f"<b>週報酬率：{roi:+.2f}%</b>"
     )
-    tg(msg)
+    tg_trading(msg)
     print(f"  📊 週績效報告已發送：淨利 {total_net:+.2f} U  ROI {roi:+.2f}%")
 
 
