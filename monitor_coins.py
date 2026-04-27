@@ -291,7 +291,10 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions):
         time.sleep(0.15)
 
 def main():
-    exchange_pub  = ccxt.binance({'enableRateLimit': True})
+    exchange_pub  = ccxt.binance({
+        'enableRateLimit': True,
+        'options': {'defaultType': 'future'},
+    })
     exchange_priv = ccxt.binance({
         'apiKey':          os.getenv('BINANCE_API_KEY', ''),
         'secret':          os.getenv('BINANCE_SECRET_KEY', ''),
