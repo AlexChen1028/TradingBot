@@ -22,8 +22,9 @@ LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 3      # 最多同時持有幾個倉位
 MARGIN_USDT    = 50     # 每筆保證金（USDT）
 LEVERAGE       = 20     # 槓桿倍數
-STOP_LOSS_PCT  = 0.10   # 止損（相對進場價格）
-TRAILING_PCT   = 0.15   # 追蹤止盈（從最佳價格回落）
+STOP_LOSS_PCT  = 0.03   # 止損（3%，交易所掛單 + 軟體備援）
+TP_PCT         = 0.06   # 止盈（6%，交易所掛單）
+TRAILING_PCT   = 0.15   # 追蹤止盈備援（從最佳價格回落，軟體層）
 MAX_HOLD_HOURS = 48     # 最長持倉時間
 TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
@@ -184,22 +185,62 @@ def open_pos(exchange, symbol, direction, positions):
     try:
         exchange.set_margin_mode('isolated', symbol)
         exchange.set_leverage(LEVERAGE, symbol, params={'marginMode': 'isolated'})
-        price  = float(exchange.fetch_ticker(symbol)['last'])
-        amount = round(MARGIN_USDT * LEVERAGE / price, 4)
+        price   = float(exchange.fetch_ticker(symbol)['last'])
+        amount  = round(MARGIN_USDT * LEVERAGE / price, 4)
+        sl_side = 'sell' if direction == 1 else 'buy'
+
         if direction == 1:
             exchange.create_market_buy_order(symbol, amount)
         else:
             exchange.create_market_sell_order(symbol, amount)
+
+        sl_id = tp_id = None
+
+        # 交易所止損（STOP_MARKET）
+        try:
+            sl_price = round(
+                price * (1 - STOP_LOSS_PCT) if direction == 1 else price * (1 + STOP_LOSS_PCT), 4
+            )
+            sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
+                'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            sl_id = sl_order['id']
+        except Exception as e:
+            print(f"  ⚠️ SL 訂單失敗 {symbol}: {e}")
+
+        # 交易所止盈（TAKE_PROFIT_MARKET）
+        try:
+            tp_price = round(
+                price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 4
+            )
+            tp_order = exchange.create_order(symbol, 'take_profit_market', sl_side, amount, None, {
+                'stopPrice': tp_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            tp_id = tp_order['id']
+        except Exception as e:
+            print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
+
         positions[symbol] = {
             'direction':   direction,
             'entry_price': price,
             'entry_time':  now8().isoformat(),
             'peak_price':  price,
             'amount':      amount,
+            'sl_order_id': sl_id,
+            'tp_order_id': tp_id,
         }
         save_positions(positions)
         side = 'LONG' if direction == 1 else 'SHORT'
-        print(f"  ✅ 開倉 {side} {symbol.split('/')[0]} | {amount} @ {price:.4f} | 保證金 ${MARGIN_USDT}")
+        coin = symbol.split('/')[0]
+        sl_label = f"SL {STOP_LOSS_PCT*100:.0f}% {'✅' if sl_id else '⚠️'}"
+        tp_label = f"TP {TP_PCT*100:.0f}% {'✅' if tp_id else '⚠️'}"
+        print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${MARGIN_USDT}×{LEVERAGE}x | {sl_label} {tp_label}")
+        tg(
+            f"{'🟢' if direction==1 else '🔴'} <b>開倉 {side} {coin}</b>\n"
+            f"進場：{price:.4f} USDT\n"
+            f"數量：{amount}  保證金：${MARGIN_USDT}×{LEVERAGE}x 逐倉\n"
+            f"{sl_label} | {tp_label}"
+        )
     except Exception as e:
         print(f"  ❌ 開倉失敗 {symbol}: {e}")
 
@@ -208,15 +249,34 @@ def close_pos(exchange, symbol, positions, reason):
     if not pos:
         return
     try:
+        # 取消交易所止損/止盈掛單
+        for key in ('sl_order_id', 'tp_order_id'):
+            oid = pos.get(key)
+            if oid:
+                try:
+                    exchange.cancel_order(oid, symbol)
+                except Exception:
+                    pass
+
         amt = pos['amount']
         if pos['direction'] == 1:
             exchange.create_market_sell_order(symbol, amt, params={'reduceOnly': True})
         else:
             exchange.create_market_buy_order(symbol, amt, params={'reduceOnly': True})
-        price   = float(exchange.fetch_ticker(symbol)['last'])
-        pnl_pct = (price - pos['entry_price']) / pos['entry_price'] * pos['direction'] * 100
-        side    = 'LONG' if pos['direction'] == 1 else 'SHORT'
-        print(f"  🔒 平倉 {side} {symbol.split('/')[0]} | PnL {pnl_pct:+.2f}% | {reason}")
+
+        price     = float(exchange.fetch_ticker(symbol)['last'])
+        ep        = pos['entry_price']
+        pnl_pct   = (price - ep) / ep * pos['direction'] * 100 * LEVERAGE
+        pnl_usdt  = amt * (price - ep) * pos['direction']
+        side      = 'LONG' if pos['direction'] == 1 else 'SHORT'
+        coin      = symbol.split('/')[0]
+        print(f"  🔒 平倉 {side} {coin} | PnL {pnl_pct:+.2f}% ({pnl_usdt:+.2f} U) | {reason}")
+        tg(
+            f"🔒 <b>平倉 {side} {coin}</b>\n"
+            f"進場：{ep:.4f} → 現價：{price:.4f}\n"
+            f"保證金盈虧：{pnl_pct:+.2f}%（{pnl_usdt:+.2f} U）\n"
+            f"原因：{reason}"
+        )
         del positions[symbol]
         save_positions(positions)
     except Exception as e:
@@ -230,6 +290,32 @@ def check_positions(exchange, positions):
         try:
             price = float(exchange.fetch_ticker(symbol)['last'])
             d     = pos['direction']
+
+            # 偵測交易所是否已透過 SL/TP 自動平倉
+            try:
+                ex_pos = exchange.fetch_positions([symbol])
+                still_open = any(
+                    abs(p.get('contracts') or 0) > 0
+                    for p in ex_pos if p.get('symbol') == symbol
+                )
+                if not still_open:
+                    ep        = pos['entry_price']
+                    pnl_pct   = (price - ep) / ep * d * 100 * LEVERAGE
+                    pnl_usdt  = pos['amount'] * (price - ep) * d
+                    side      = 'LONG' if d == 1 else 'SHORT'
+                    coin      = symbol.split('/')[0]
+                    trigger   = '🎯 止盈' if pnl_usdt > 0 else '🛑 止損'
+                    print(f"  {trigger} 交易所平倉 {side} {coin} | PnL {pnl_pct:+.2f}% ({pnl_usdt:+.2f} U)")
+                    tg(
+                        f"⚡ <b>{trigger} {side} {coin}（交易所自動）</b>\n"
+                        f"進場：{ep:.4f} → 現價：{price:.4f}\n"
+                        f"保證金盈虧：{pnl_pct:+.2f}%（{pnl_usdt:+.2f} U）"
+                    )
+                    del positions[symbol]
+                    save_positions(positions)
+                    continue
+            except Exception:
+                pass
 
             if d == 1:
                 positions[symbol]['peak_price'] = max(pos['peak_price'], price)
@@ -344,7 +430,7 @@ def main():
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")
-    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  止損 {STOP_LOSS_PCT:.0%}  追蹤止盈 {TRAILING_PCT:.0%}")
+    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.0%}  TP {TP_PCT:.0%}  追蹤止盈備援 {TRAILING_PCT:.0%}")
     print(f"  最多 {MAX_POSITIONS} 個倉位  門檻 {MIN_SIGNALS}/4 個信號")
     print("=" * 60)
 

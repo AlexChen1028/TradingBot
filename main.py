@@ -81,20 +81,21 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
-_TG_TOKEN   = os.getenv('TELEGRAM_TOKEN',   '')
-_TG_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+_TG_TOKEN    = os.getenv('TELEGRAM_TOKEN',   '')
+_TG_CHAT_IDS = [i.strip() for i in os.getenv('TELEGRAM_CHAT_ID', '').split(',') if i.strip()]
 
 def tg_send(text: str):
-    if not _TG_TOKEN or not _TG_CHAT_ID:
+    if not _TG_TOKEN or not _TG_CHAT_IDS:
         return
-    try:
-        _requests.post(
-            f'https://api.telegram.org/bot{_TG_TOKEN}/sendMessage',
-            json={'chat_id': _TG_CHAT_ID, 'text': text, 'parse_mode': 'HTML'},
-            timeout=10,
-        )
-    except Exception as e:
-        log.warning(f'Telegram error: {e}')
+    for chat_id in _TG_CHAT_IDS:
+        try:
+            _requests.post(
+                f'https://api.telegram.org/bot{_TG_TOKEN}/sendMessage',
+                json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                timeout=10,
+            )
+        except Exception as e:
+            log.warning(f'Telegram error: {e}')
 
 
 # ── Model definition ──────────────────────────────────────────────────────────
@@ -154,7 +155,8 @@ def fetch_tick_data(exchange_pub, feature_cols: list, timeframe: str = '1h') -> 
     tf_hours  = {'1h': 1, '4h': 4, '8h': 8, '1d': 24}.get(timeframe, 1)
     bars_day  = 24 // tf_hours
     since = (now8() - timedelta(days=LOOKBACK_DAYS + 5)).strftime('%Y-%m-%d')
-    limit = (LOOKBACK_DAYS + 5) * bars_day
+    # +200 extra bars to survive rolling(168) warmup NaN after dropna
+    limit = (LOOKBACK_DAYS + 5) * bars_day + 200
 
     raw  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, timeframe, limit=limit)
     ohlcv = pd.DataFrame(raw, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
