@@ -501,22 +501,28 @@ def open_position(exchange, direction: int, balance: float, regime: str = 'neutr
 
         sl_side = 'sell' if direction == 1 else 'buy'
 
-        # 追蹤止損 或 固定止損
-        try:
-            if TRAILING_SL:
+        # 止損：先試追蹤止損；若失敗（Demo 不支援）→ 退回固定 STOP_MARKET
+        sl_order = None
+        if TRAILING_SL:
+            try:
                 sl_order = exchange.create_order(SYMBOL, 'trailing_stop_market', sl_side, amount, None, {
-                    'callbackRate':   SL_PCT * 100,   # 百分比，e.g. 3.0
+                    'callbackRate':   SL_PCT * 100,
                     'closePosition':  True,
                     'workingType':    'MARK_PRICE',
                 })
-            else:
+            except Exception as e:
+                log.warning(f"Trailing SL failed ({e}) — falling back to fixed STOP_MARKET")
+        if sl_order is None:
+            try:
                 sl_price = round(price * (1 - SL_PCT) if direction == 1 else price * (1 + SL_PCT), 2)
                 sl_order = exchange.create_order(SYMBOL, 'stop_market', sl_side, amount, None, {
                     'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
                 })
-            sl_id = sl_order['id']
-        except Exception as e:
-            log.warning(f"SL order failed: {e}")
+            except Exception as e:
+                log.error(f"Fixed SL also failed: {e}")
+        sl_id = sl_order['id'] if sl_order else None
+        if sl_id is None:
+            tg_send(f"⚠️ [{_COIN}] 止損訂單未掛上，請手動處理！")
 
         # 固定止盈
         try:
