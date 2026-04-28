@@ -68,7 +68,7 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 - **Daily 00:00 +08**: rolling 7-day performance report — net profit, fees, ROI per coin
 - **Daily balance report**: opening vs closing balance each day
 - **Heartbeat**: once every 24h to confirm the bot is alive
-- Broadcasts to **2 Telegram users** simultaneously
+- All notifications broadcast to a shared **Telegram group** (both bots are members)
 
 ---
 
@@ -95,14 +95,19 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 BINANCE_API_KEY=...
 BINANCE_SECRET_KEY=...
 
-# Main bots (BTC / ETH / SOL) — Trading Bot 1
+# Main bots (BTC / ETH / SOL) — Trading Bot
 TELEGRAM_TOKEN=...
-TELEGRAM_CHAT_ID=user1_id,user2_id
+TELEGRAM_CHAT_ID=-100xxxxxxxxxx        # Telegram group chat_id (negative number)
 
 # Altcoin monitor — Alert Bot
 MONITOR_TOKEN=...
-MONITOR_CHAT_ID=user1_id,user2_id
+MONITOR_CHAT_ID=-100xxxxxxxxxx         # Same group, or different group
 ```
+
+> Both `TELEGRAM_CHAT_ID` and `MONITOR_CHAT_ID` accept comma-separated IDs:
+> - **Group chat**: a single negative number (e.g. `-5279333490`) — recommended, both users automatically receive everything
+> - **Multiple individual users**: `id1,id2,id3` (positive numbers)
+> - **Mix**: `id1,-100xxxxxxxxxx` (group + individual)
 
 Additional variables configurable in `.env` or `docker-compose.yml`:
 
@@ -116,6 +121,37 @@ Additional variables configurable in `.env` or `docker-compose.yml`:
 | `TP_PCT` | `0.05` | Take-profit distance from entry |
 | `MAX_DD_PCT` | `0.20` | Max drawdown before pausing |
 | `DEMO_MODE` | `true` | Use Binance Demo Trading |
+
+---
+
+## Telegram Group Setup
+
+To send all notifications to a shared group instead of individual users:
+
+1. **Create a Telegram group** and add both bots (`Trading Bot` + `Alert Bot`) as members.
+2. **Send any message** in the group (so the bots see it).
+3. **Get the group `chat_id`** — open in your browser (replace `<TOKEN>`):
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+   Look for `"chat":{"id":-100xxxxxxxxxx,"title":"<your group name>","type":"supergroup"}`
+   The group `chat_id` starts with `-` (negative number).
+4. **Update `.env`** with the group ID:
+   ```env
+   TELEGRAM_CHAT_ID=-100xxxxxxxxxx
+   MONITOR_CHAT_ID=-100xxxxxxxxxx
+   ```
+5. **Apply on VPS** (note: `restart` won't reload env, must use `down`+`up`):
+   ```bash
+   docker compose down && docker compose up -d
+   ```
+6. **Test**:
+   ```bash
+   curl -s -G "https://api.telegram.org/bot<TOKEN>/sendMessage" \
+     --data-urlencode "chat_id=-100xxxxxxxxxx" \
+     --data-urlencode "text=test"
+   ```
+   Reply `"ok":true` and the message appears in the group → success.
 
 ---
 
