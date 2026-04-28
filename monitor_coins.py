@@ -181,6 +181,66 @@ def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry
         f.write(json.dumps(record) + '\n')
 
 
+def send_hourly_position_report():
+    """整點：讀取 BTC/ETH/SOL status 檔 + altcoin 持倉，合併發一則報告。"""
+    now = now8().strftime('%Y-%m-%d %H:%M +08')
+    lines = []
+    balance = None
+
+    for coin in ['BTC', 'ETH', 'SOL']:
+        p = Path(f'{coin.lower()}_status.json')
+        if not p.exists():
+            continue
+        try:
+            s = json.loads(p.read_text())
+            d = s.get('direction', 0)
+            if balance is None:
+                balance = s.get('balance')
+            if d == 0:
+                lines.append(f"⚪ <b>{coin}</b>  空倉")
+            else:
+                side  = '🟢 LONG' if d == 1 else '🔴 SHORT'
+                lines.append(
+                    f"{side} <b>{coin}</b> 20x逐倉\n"
+                    f"   進場 {s['entry_price']:,.2f} → 現價 {s['cur_price']:,.2f}\n"
+                    f"   價格 {s['price_pct']:+.2f}%  保證金盈虧 {s['pnl_pct']:+.2f}%  持倉 {s['held_h']:.1f}h"
+                )
+        except Exception:
+            continue
+
+    # altcoin 持倉
+    positions = load_positions()
+    for sym, pos in positions.items():
+        coin = sym.split('/')[0]
+        d    = pos['direction']
+        ep   = pos['entry_price']
+        side = '🟢 LONG' if d == 1 else '🔴 SHORT'
+        try:
+            cur = float(requests.get(
+                f'https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT',
+                timeout=5,
+            ).json()['price'])
+            pnl = (cur - ep) / ep * d * 100 * LEVERAGE
+            lines.append(
+                f"{side} <b>{coin}</b> 20x逐倉（山寨）\n"
+                f"   進場 {ep:.4f} → 現價 {cur:.4f}  保證金盈虧 {pnl:+.2f}%"
+            )
+        except Exception:
+            lines.append(f"{side} <b>{coin}</b> 20x逐倉（山寨）  進場 {ep:.4f}")
+
+    if not lines:
+        return  # 全空倉就不發
+
+    body = '\n\n'.join(lines)
+    bal_str = f"\n\n💰 帳戶餘額：{balance:,.2f} USDT" if balance else ''
+    tg_trading(
+        f"📋 <b>每小時持倉公告</b>\n"
+        f"⏰ {now}\n\n"
+        f"{body}"
+        f"{bal_str}"
+    )
+
+
 def send_performance_report():
     """讀取過去7天所有幣種交易記錄，計算淨利潤和報酬率，發送到TG"""
     cutoff = now8() - timedelta(days=7)
@@ -652,6 +712,7 @@ def main():
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次
     last_report_date = None  # 每天發一次週績效報告
+    last_report_hour = -1   # 整點持倉公告
 
     while True:
         try:
@@ -668,8 +729,14 @@ def main():
                 if lb_candidates:
                     scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions)
 
+            # 整點發彙總持倉報告（分鐘數 < 2 且這小時還沒發過）
+            _now = now8()
+            if _now.minute < 2 and _now.hour != last_report_hour:
+                send_hourly_position_report()
+                last_report_hour = _now.hour
+
             # 每天 00:00 +08 發送週績效報告
-            today = now8().date()
+            today = _now.date()
             if today != last_report_date:
                 send_performance_report()
                 last_report_date = today

@@ -14,6 +14,7 @@ services:
       - ./btc_state.json:/app/btc_state.json
       - ./btc_bot.log:/app/btc_bot.log
       - ./btc_trades.jsonl:/app/btc_trades.jsonl
+      - ./btc_status.json:/app/btc_status.json
 
   eth-bot:
     build: .
@@ -31,6 +32,7 @@ services:
       - ./eth_state.json:/app/eth_state.json
       - ./eth_bot.log:/app/eth_bot.log
       - ./eth_trades.jsonl:/app/eth_trades.jsonl
+      - ./eth_status.json:/app/eth_status.json
 
   sol-bot:
     build: .
@@ -46,6 +48,7 @@ services:
       - ./sol_state.json:/app/sol_state.json
       - ./sol_bot.log:/app/sol_bot.log
       - ./sol_trades.jsonl:/app/sol_trades.jsonl
+      - ./sol_status.json:/app/sol_status.json
 
   coin-monitor:
     build: .
@@ -62,4 +65,7 @@ services:
       - ./btc_trades.jsonl:/app/btc_trades.jsonl
       - ./eth_trades.jsonl:/app/eth_trades.jsonl
       - ./sol_trades.jsonl:/app/sol_trades.jsonl
+      - ./btc_status.json:/app/btc_status.json
+      - ./eth_status.json:/app/eth_status.json
+      - ./sol_status.json:/app/sol_status.json
     command: python -u monitor_coins.py

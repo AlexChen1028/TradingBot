@@ -774,38 +774,33 @@ def main():
                 cur_label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}[state['direction']]
                 log.info(f"No action — holding {cur_label}")
 
-            # 每小時持倉報告
+            # 寫 status 檔（供 coin-monitor 彙總為整點持倉公告）
             try:
                 cur_price = get_price(exchange)
                 balance   = get_balance(exchange)
-                if state['direction'] != 0 and state.get('entry_price'):
-                    ep      = state['entry_price']
-                    amt     = state['amount_coin']
-                    price_pct = (cur_price - ep) / ep * state['direction'] * 100
-                    pnl_pct   = price_pct * LEVERAGE
-                    held_h    = (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
-                    dir_emoji = '🟢 LONG' if state['direction'] == 1 else '🔴 SHORT'
-                    tg_send(
-                        f"📋 <b>[{_COIN}] 每小時持倉報告</b>\n"
-                        f"⏰ {now.strftime('%Y-%m-%d %H:%M +08')}\n\n"
-                        f"方向：{dir_emoji} {LEVERAGE}x 逐倉\n"
-                        f"數量：{amt} {_COIN}\n"
-                        f"進場價：{ep:,.2f} USDT\n"
-                        f"現價：{cur_price:,.2f} USDT\n"
-                        f"價格變動：{price_pct:+.2f}%\n"
-                        f"保證金盈虧：{pnl_pct:+.2f}%\n"
-                        f"持倉時間：{held_h:.1f} 小時\n"
-                        f"帳戶餘額：{balance:,.2f} USDT"
-                    )
-                else:
-                    tg_send(
-                        f"📋 <b>[{_COIN}] 每小時持倉報告</b>\n"
-                        f"⏰ {now.strftime('%Y-%m-%d %H:%M +08')}\n\n"
-                        f"方向：⚪ 空倉\n"
-                        f"帳戶餘額：{balance:,.2f} USDT"
-                    )
+                ep        = state.get('entry_price') or cur_price
+                amt       = state.get('amount_coin', 0)
+                d         = state['direction']
+                price_pct = (cur_price - ep) / ep * d * 100 if d else 0.0
+                pnl_pct   = price_pct * LEVERAGE
+                held_h    = (
+                    (now - datetime.fromisoformat(state['entry_time'])).total_seconds() / 3600
+                    if d and state.get('entry_time') else 0.0
+                )
+                Path(f'{_COIN.lower()}_status.json').write_text(json.dumps({
+                    'coin':        _COIN,
+                    'direction':   d,
+                    'amount':      amt,
+                    'entry_price': ep,
+                    'cur_price':   cur_price,
+                    'price_pct':   round(price_pct, 2),
+                    'pnl_pct':     round(pnl_pct, 2),
+                    'held_h':      round(held_h, 1),
+                    'balance':     round(balance, 2),
+                    'updated_at':  now.isoformat(),
+                }))
             except Exception as e:
-                log.warning(f"Status report error: {e}")
+                log.warning(f"Status write error: {e}")
 
         except KeyboardInterrupt:
             log.info("Bot stopped by user.")
