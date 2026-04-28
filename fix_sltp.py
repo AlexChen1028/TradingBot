@@ -61,12 +61,18 @@ def main():
             print(f'⚠️  {symbol}: fetch_open_orders 失敗: {e}')
             continue
 
+        # 偵測現有 SL/TP — 同時檢查 ccxt type 欄位 + Binance 原始 info.type
+        def _kind(o):
+            t  = (o.get('type') or '').upper()
+            rt = str(o.get('info', {}).get('type', '')).upper()
+            return t + ' ' + rt
+
         has_sl = any(
-            o.get('type', '').lower() in ('stop_market', 'stop', 'trailing_stop_market')
+            'STOP' in _kind(o) and 'TAKE_PROFIT' not in _kind(o) and 'TAKEPROFIT' not in _kind(o)
             for o in open_orders
         )
         has_tp = any(
-            o.get('type', '').lower() in ('take_profit_market', 'take_profit')
+            'TAKE_PROFIT' in _kind(o) or 'TAKEPROFIT' in _kind(o)
             for o in open_orders
         )
 
@@ -93,7 +99,10 @@ def main():
                     })
                     print(f'  ✅ SL 掛上 @ {sl_price}')
                 except Exception as e:
-                    print(f'  ❌ SL 失敗: {e}')
+                    if '-4130' in str(e) or 'existing' in str(e).lower():
+                        print(f'  ℹ️  SL 已存在於交易所（偵測時漏掉，實際 OK）')
+                    else:
+                        print(f'  ❌ SL 失敗: {e}')
 
         if not has_tp:
             tp_price = entry * (1 + args.tp) if direction == 1 else entry * (1 - args.tp)
@@ -109,7 +118,10 @@ def main():
                     })
                     print(f'  ✅ TP 掛上 @ {tp_price}')
                 except Exception as e:
-                    print(f'  ❌ TP 失敗: {e}')
+                    if '-4130' in str(e) or 'existing' in str(e).lower():
+                        print(f'  ℹ️  TP 已存在於交易所（偵測時漏掉，實際 OK）')
+                    else:
+                        print(f'  ❌ TP 失敗: {e}')
 
         fixed += 1
         time.sleep(0.3)
