@@ -5,6 +5,8 @@
 """
 
 import os, json, time, ccxt, requests, numpy as np, pandas as pd
+import feedparser
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer as _VSA
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -28,9 +30,26 @@ TRAILING_PCT   = 0.15   # 追蹤止盈備援（從最佳價格回落，軟體層
 MAX_HOLD_HOURS = 48     # 最長持倉時間
 TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
-POSITIONS_FILE    = 'positions_altcoin.json'
+POSITIONS_FILE      = 'positions_altcoin.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
-TAKER_FEE     = 0.0005  # Binance futures taker fee 0.05%
+TAKER_FEE           = 0.0005  # Binance futures taker fee 0.05%
+NEWS_SEEN_FILE      = 'news_seen.json'
+
+# 重大新聞偵測：含以下關鍵字才考慮
+NEWS_KEYWORDS = [
+    'crash', 'plunge', 'surge', 'rally', 'hack', 'exploit', 'breach', 'stolen',
+    'ban', 'sec', 'cftc', 'regulation', 'lawsuit', 'crackdown', 'arrest',
+    'bankrupt', 'insolvent', 'collapse', 'freeze', 'suspend', 'delist',
+    'federal reserve', 'rate cut', 'rate hike', 'recession', 'inflation',
+    'emergency', 'breaking', 'liquidat', 'rug pull', 'scam', 'billion',
+]
+NEWS_SENTIMENT_MIN = 0.25   # |vader compound| 低於此值不發
+NEWS_FEEDS = [
+    'https://www.coindesk.com/arc/outboundfeeds/rss/',
+    'https://cointelegraph.com/rss',
+    'https://decrypt.co/feed',
+]
+_news_analyzer = _VSA()
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 TG_TOKEN    = os.getenv('MONITOR_TOKEN',   '')
@@ -74,6 +93,71 @@ def load_positions():
 
 def save_positions(pos):
     Path(POSITIONS_FILE).write_text(json.dumps(pos, indent=2))
+
+# ── 重大新聞偵測 ──────────────────────────────────────────────────────────────
+def check_breaking_news():
+    """掃描加密貨幣 RSS，偵測含重大關鍵字且情緒強烈的新聞，發到 TG 群組。"""
+    # 載入已發送記錄，清除 24 小時前的舊條目
+    seen_data: dict = {}
+    p = Path(NEWS_SEEN_FILE)
+    if p.exists():
+        try:
+            seen_data = json.loads(p.read_text())
+        except Exception:
+            pass
+    cutoff = (now8() - timedelta(hours=24)).isoformat()
+    seen_data = {url: ts for url, ts in seen_data.items() if ts > cutoff}
+    seen_urls = set(seen_data)
+
+    sent = 0
+    for feed_url in NEWS_FEEDS:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in (feed.entries or [])[:8]:
+                link = entry.get('link') or entry.get('id', '')
+                if not link or link in seen_urls:
+                    continue
+                title   = entry.get('title', '')
+                summary = entry.get('summary', '')[:400]
+                text    = f"{title} {summary}".lower()
+
+                # 關鍵字過濾
+                hit = next((kw for kw in NEWS_KEYWORDS if kw in text), None)
+                if not hit:
+                    continue
+
+                # 情緒強度過濾
+                score = _news_analyzer.polarity_scores(text)['compound']
+                if abs(score) < NEWS_SENTIMENT_MIN:
+                    continue
+
+                # 決定情緒標籤
+                if score <= -0.4:
+                    tag = '🔴 利空'
+                elif score >= 0.4:
+                    tag = '🟢 利多'
+                else:
+                    tag = '⚠️ 重要'
+
+                source  = feed_url.split('/')[2].replace('www.', '')
+                excerpt = summary[:220] + ('...' if len(summary) > 220 else '')
+                tg(
+                    f"📰 <b>重大市場新聞 {tag}</b>\n"
+                    f"🔗 {source}\n\n"
+                    f"<b>{title}</b>\n\n"
+                    f"{excerpt}"
+                )
+                seen_data[link] = now8().isoformat()
+                seen_urls.add(link)
+                sent += 1
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"  ⚠️ 新聞來源失敗 {feed_url}: {e}")
+
+    Path(NEWS_SEEN_FILE).write_text(json.dumps(seen_data))
+    if sent:
+        print(f"  📰 重大新聞：發送 {sent} 則")
+
 
 # ── 交易記錄 ──────────────────────────────────────────────────────────────────
 def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry_time, reason):
@@ -590,6 +674,7 @@ def main():
                 send_performance_report()
                 last_report_date = today
 
+            check_breaking_news()
             scan(exchange_pub, exchange_priv, watch_coins, positions)
 
         except KeyboardInterrupt:

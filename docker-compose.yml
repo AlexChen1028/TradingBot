@@ -57,6 +57,7 @@ services:
       - ./scan_coins.py:/app/scan_coins.py
       - ./positions_altcoin.json:/app/positions_altcoin.json
       - ./altcoin_trades.jsonl:/app/altcoin_trades.jsonl
+      - ./news_seen.json:/app/news_seen.json
       # 讓 coin-monitor 也能讀到三隻主力的交易記錄，產生彙總週報
       - ./btc_trades.jsonl:/app/btc_trades.jsonl
       - ./eth_trades.jsonl:/app/eth_trades.jsonl
