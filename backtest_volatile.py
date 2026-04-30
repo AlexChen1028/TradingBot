@@ -99,11 +99,16 @@ def backtest(df):
     avg_loss  = t[t['ret'] < 0]['ret'].mean() if (t['ret'] < 0).any() else 0
     avg_held  = t['held_h'].mean()
 
+    # 夏普比率：以平均持倉時間換算年化因子，無風險利率設 0
+    ann_factor = np.sqrt(365 * 24 / avg_held) if avg_held > 0 else 1.0
+    sharpe     = t['ret'].mean() / t['ret'].std() * ann_factor if t['ret'].std() > 0 else 0.0
+
     return {
         'n_trades':     n,
         'win_rate':     win_rate,
         'total_return': total_ret,
         'max_dd':       max_dd,
+        'sharpe':       sharpe,
         'avg_win':      avg_win,
         'avg_loss':     avg_loss,
         'avg_held_h':   avg_held,
@@ -134,7 +139,8 @@ def main():
         print(
             f"總報酬 {res['total_return']:+.1%}  "
             f"勝率 {res['win_rate']:.0%}  "
-            f"交易次數 {res['n_trades']}  "
+            f"次數 {res['n_trades']}  "
+            f"夏普 {res['sharpe']:+.2f}  "
             f"最大回撤 {res['max_dd']:.1%}"
         )
         time.sleep(0.3)
@@ -147,17 +153,18 @@ def main():
             .sort_values('total_return', ascending=False)
             .reset_index(drop=True))
 
-    print(f"\n{'='*95}")
+    print(f"\n{'='*105}")
     print("  最終排名（依總報酬）")
-    print(f"{'='*95}")
-    print(f"  {'幣種':<25} {'總報酬':>8} {'勝率':>6} {'次數':>5} {'最大回撤':>8} {'平均獲利':>8} {'平均虧損':>8} {'均持倉h':>7}")
-    print(f"  {'-'*88}")
+    print(f"{'='*105}")
+    print(f"  {'幣種':<25} {'總報酬':>8} {'勝率':>6} {'次數':>5} {'夏普':>6} {'最大回撤':>8} {'平均獲利':>8} {'平均虧損':>8} {'均持倉h':>7}")
+    print(f"  {'-'*98}")
     for _, row in df_r.iterrows():
         print(
             f"  {row['symbol']:<25} "
             f"{row['total_return']:>+8.1%} "
             f"{row['win_rate']:>6.0%} "
             f"{int(row['n_trades']):>5} "
+            f"{row['sharpe']:>+6.2f} "
             f"{row['max_dd']:>8.1%} "
             f"{row['avg_win']:>+8.1%} "
             f"{row['avg_loss']:>+8.1%} "
