@@ -29,16 +29,20 @@ from data import (fetch_btc, fetch_us_market, fetch_fear_greed,
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--coin',      default='BTC', choices=['BTC', 'ETH', 'SOL'],
+                    help='Which coin model to backtest (default: BTC)')
 parser.add_argument('--since',     default='2017-09-01')
 parser.add_argument('--threshold', type=float, default=0.50)
 parser.add_argument('--fee',       type=float, default=0.0004)
-parser.add_argument('--symbol',    default='BTC/USDT')
 parser.add_argument('--min_hold',  type=int,   default=24,
                     help='Min bars to hold a position before switching (default 24h)')
 parser.add_argument('--sizing',    type=str,   default='kelly',
                     choices=['fixed', 'kelly', 'half_kelly'],
                     help='Position sizing: fixed=binary ±1, kelly=full Kelly, half_kelly=half Kelly')
 args = parser.parse_args()
+
+COIN   = args.coin.upper()
+SYMBOL = f'{COIN}/USDT'
 
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -68,16 +72,21 @@ class TransformerPredictor(nn.Module):
 
 # ── Load model ────────────────────────────────────────────────────────────────
 def load_model():
-    for p in ('btc_model.pt', 'btc_scaler.pkl'):
+    coin_lower = COIN.lower()
+    # 優先使用 walk-forward 模型，fallback 到舊版
+    model_path  = f'{coin_lower}_model_wf.pt'  if os.path.exists(f'{coin_lower}_model_wf.pt')  else f'{coin_lower}_model.pt'
+    scaler_path = f'{coin_lower}_scaler_wf.pkl' if os.path.exists(f'{coin_lower}_scaler_wf.pkl') else f'{coin_lower}_scaler.pkl'
+    for p in (model_path, scaler_path):
         if not os.path.exists(p):
-            sys.exit(f"[ERROR] {p} not found — run train.py first.")
-    ckpt  = torch.load('btc_model.pt', map_location='cpu', weights_only=False)
+            sys.exit(f"[ERROR] {p} not found — run train_wf.py first.")
+    ckpt  = torch.load(model_path, map_location='cpu', weights_only=False)
     cfg   = ckpt['config']
     model = TransformerPredictor(cfg['n_features'], cfg['d_model'], cfg['nhead'],
                                  cfg['num_layers'], cfg['dropout'], cfg['seq_len'])
     model.load_state_dict(ckpt['model_state'])
     model.eval()
-    return model, joblib.load('btc_scaler.pkl'), cfg
+    print(f"Model : {model_path}  ({cfg['n_features']} features, seq_len={cfg['seq_len']})")
+    return model, joblib.load(scaler_path), cfg
 
 
 # ── Batched inference ─────────────────────────────────────────────────────────
@@ -238,7 +247,7 @@ def plot(df, m_ls, m_lf, m_bah):
         elif pos[i-1] < -1e-6:
             ax1.axvspan(ts[i-1], ts[i], alpha=float(abs(pos[i-1]))*0.3, color='#f85149', lw=0)
     ax1.set_ylabel('Price (USDT)')
-    ax1.set_title(f'BTC/USDT Backtest  |  Fee {args.fee*100:.3f}%  |  '
+    ax1.set_title(f'{SYMBOL} Backtest  |  Fee {args.fee*100:.3f}%  |  '
                   f'Min hold {args.min_hold}h  |  Sizing: {args.sizing}  |  '
                   f'Threshold {args.threshold}',
                   color='white', pad=8)
@@ -274,7 +283,7 @@ def plot(df, m_ls, m_lf, m_bah):
     for ax in (ax1, ax2, ax3):
         plt.setp(ax.get_xticklabels(), visible=False)
 
-    out = 'backtest_result.png'
+    out = f'{COIN.lower()}_backtest_result.png'
     plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='#0d1117')
     print(f"Chart saved -> {out}")
     plt.show()
@@ -286,10 +295,10 @@ def main():
     feature_cols = cfg['feature_cols']
     seq_len      = cfg['seq_len']
 
-    btc  = fetch_btc(since_iso=f"{args.since}T00:00:00Z")
+    btc  = fetch_btc(symbol=f'{COIN}/USDT', since_iso=f"{args.since}T00:00:00Z")
     mkt  = fetch_us_market(start=args.since)
     fng  = fetch_fear_greed()
-    fr   = fetch_funding_rate()
+    fr   = fetch_funding_rate(symbol=f'{COIN}/USDT:USDT')
     news = fetch_news_sentiment()
     df   = merge_context(btc, mkt, fng, fr, news)
     df   = add_features(df)
@@ -310,7 +319,7 @@ def main():
     end   = str(df['ts'].iloc[-1])[:10]
 
     print(f"\n{'='*75}")
-    print(f"  {args.symbol} Backtest  |  {start} -> {end}  ({len(df_ls):,} bars)")
+    print(f"  {SYMBOL} Backtest  |  {start} -> {end}  ({len(df_ls):,} bars)")
     print(f"  Fee: {args.fee*100:.3f}%  |  Threshold: {args.threshold}  |  Min hold: {args.min_hold}h  |  Features: {len(feature_cols)}")
     print(f"{'='*75}")
     print(f"  {'Strategy':<14} | {'Return':>8} | {'Ann.Return':>10} | "
