@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-06 11:28 +08
+> Last updated: 2026-05-06 17:34 +08
 
 ---
 
@@ -14,7 +14,7 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 | `trading-bot` (BTC) | Paused | ML model underperforming, retraining in progress |
 | `eth-bot` (ETH) | Paused | ML model underperforming, retraining in progress |
 | `sol-bot` (SOL) | Paused | ML model underperforming, retraining in progress |
-| `coin-monitor` | **Running** | Altcoin strategy profitable, running solo |
+| `coin-monitor` | **Running** | Altcoin strategy profitable, running solo; startup crash fixed |
 
 ---
 
