@@ -340,6 +340,18 @@ docker compose up -d --build
 **Hourly position report not sending**  
 Ensure `btc_status.json`, `eth_status.json`, `sol_status.json` exist as files (not directories) before starting coin-monitor. Run `touch btc_status.json eth_status.json sol_status.json` on VPS first.
 
+**Resetting altcoin positions and starting fresh (Demo)**  
+If you want to clear all tracked altcoin positions and start from a clean slate:
+```bash
+# 1. Reset Demo account balance via Binance UI (Futures → Reset Demo Account)
+# 2. Clear local position tracking file
+echo '{}' > positions_altcoin.json
+# 3. Pull latest code and restart bot
+cd ~/TradingBot && git pull
+docker compose restart coin-monitor
+```
+Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation are isolated — they do not affect new trades on other symbols and can be ignored.
+
 ---
 
 ## Resuming Claude Code Sessions
