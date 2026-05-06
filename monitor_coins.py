@@ -185,31 +185,10 @@ def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry
 
 
 def send_hourly_position_report():
-    """整點：讀取 BTC/ETH/SOL status 檔 + altcoin 持倉，合併發一則報告。"""
+    """整點：altcoin 持倉彙總報告。"""
     now = now8().strftime('%Y-%m-%d %H:%M +08')
     lines = []
     balance = None
-
-    for coin in ['BTC', 'ETH', 'SOL']:
-        p = Path(f'{coin.lower()}_status.json')
-        if not p.exists():
-            continue
-        try:
-            s = json.loads(p.read_text())
-            d = s.get('direction', 0)
-            if balance is None:
-                balance = s.get('balance')
-            if d == 0:
-                lines.append(f"⚪ <b>{coin}</b>  空倉")
-            else:
-                side  = '🟢 LONG' if d == 1 else '🔴 SHORT'
-                lines.append(
-                    f"{side} <b>{coin}</b> 20x逐倉\n"
-                    f"   進場 {s['entry_price']:,.2f} → 現價 {s['cur_price']:,.2f}\n"
-                    f"   價格 {s['price_pct']:+.2f}%  保證金盈虧 {s['pnl_pct']:+.2f}%  持倉 {s['held_h']:.1f}h"
-                )
-        except Exception:
-            continue
 
     # altcoin 持倉
     positions = load_positions()
@@ -235,22 +214,17 @@ def send_hourly_position_report():
         return  # 全空倉就不發
 
     body = '\n\n'.join(lines)
-    bal_str = f"\n\n💰 帳戶餘額：{balance:,.2f} USDT" if balance else ''
-    tg_trading(
-        f"📋 <b>每小時持倉公告</b>\n"
+    tg(
+        f"📋 <b>山寨幣持倉公告</b>\n"
         f"⏰ {now}\n\n"
         f"{body}"
-        f"{bal_str}"
     )
 
 
 def send_performance_report():
-    """讀取過去7天所有幣種交易記錄，計算淨利潤和報酬率，發送到TG"""
+    """讀取過去7天山寨幣交易記錄，計算淨利潤和報酬率，發送到TG"""
     cutoff = now8() - timedelta(days=7)
     trade_files = {
-        'BTC':  'btc_trades.jsonl',
-        'ETH':  'eth_trades.jsonl',
-        'SOL':  'sol_trades.jsonl',
         '山寨': ALTCOIN_TRADES_FILE,
     }
 
@@ -306,7 +280,7 @@ def send_performance_report():
     )
 
     msg = (
-        f"{emoji} <b>週績效報告（過去7天）</b>\n"
+        f"{emoji} <b>山寨幣週績效報告（過去7天）</b>\n"
         f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
         f"{coin_lines}\n\n"
         f"總交易：{total_trades} 筆\n"
