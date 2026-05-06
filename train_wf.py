@@ -317,17 +317,42 @@ def calc_metrics(df, ret_col):
     im  = df['position'].abs() > 1e-6
     wr  = (df.loc[im, 'strat_ret'] > 0).sum() / im.sum() if im.sum() else float('nan')
     avsz = df.loc[im, 'position'].abs().mean() if im.sum() else float('nan')
+
+    # Calmar = 年化報酬 / 最大回撤（越高越好）
+    calmar = ann / abs(dd.min()) if dd.min() < 0 else float('nan')
+
+    # Sortino = 只懲罰下行波動的 Sharpe（比 Sharpe 更嚴謹）
+    downside_vol = r[r < 0].std() * np.sqrt(HPY) if (r < 0).any() else 1e-9
+    sortino = (ann - 0.04) / downside_vol if downside_vol > 0 else 0
+
+    # Profit Factor = 總獲利 / 總虧損（>1 代表策略有效）
+    gains  = r[r > 0].sum()
+    losses = abs(r[r < 0].sum())
+    profit_factor = gains / losses if losses > 0 else float('nan')
+
+    # Win/Loss Ratio = 平均獲利 / 平均虧損
+    avg_win  = r[r > 0].mean() if (r > 0).any() else float('nan')
+    avg_loss = abs(r[r < 0].mean()) if (r < 0).any() else float('nan')
+    wl_ratio = avg_win / avg_loss if (not np.isnan(avg_win) and not np.isnan(avg_loss) and avg_loss > 0) else float('nan')
+
     return dict(total=tot, ann=ann, sharpe=shp, max_dd=dd.min(),
+                calmar=calmar, sortino=sortino,
+                profit_factor=profit_factor, wl_ratio=wl_ratio,
                 win_rate=wr, avg_size=avsz,
                 n_trades=int(df['_trades'].iloc[0]),
                 drawdowns=dd, cum=cum)
 
 
 def print_row(label, m):
-    wr   = f"{m['win_rate']:.2%}"  if not np.isnan(m.get('win_rate',  float('nan'))) else "   —  "
-    avsz = f"{m['avg_size']:.3f}" if not np.isnan(m.get('avg_size', float('nan'))) else "  —   "
+    wr  = f"{m['win_rate']:.2%}"  if not np.isnan(m.get('win_rate',  float('nan'))) else "   —  "
+    avsz= f"{m['avg_size']:.3f}" if not np.isnan(m.get('avg_size',  float('nan'))) else "  —   "
+    cal = f"{m['calmar']:.2f}"   if not np.isnan(m.get('calmar',    float('nan'))) else "  — "
+    sor = f"{m['sortino']:.2f}"  if not np.isnan(m.get('sortino',   float('nan'))) else "  — "
+    pf  = f"{m['profit_factor']:.2f}" if not np.isnan(m.get('profit_factor', float('nan'))) else "  — "
+    wlr = f"{m['wl_ratio']:.2f}" if not np.isnan(m.get('wl_ratio',  float('nan'))) else "  — "
     print(f"  {label:<14} | {m['total']:>+8.2%} | {m['ann']:>+10.2%} | "
           f"{m['sharpe']:>7.2f} | {m['max_dd']:>8.2%} | {wr:>7} | {m['n_trades']:>7} | {avsz:>7}")
+    print(f"  {'':14}   Calmar {cal:>6}  Sortino {sor:>6}  ProfitFactor {pf:>5}  Win/Loss {wlr:>5}")
 
 
 def plot_wf(df_ls, m_ls, m_lf, m_bah, window_dates, coin='BTC/USDT'):
