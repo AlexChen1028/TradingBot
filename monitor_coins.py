@@ -24,9 +24,9 @@ LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 999    # 無上限（原3→5）
 MARGIN_USDT    = 60     # 每筆保證金（USDT）（原50）
 LEVERAGE       = 20     # 槓桿倍數
-STOP_LOSS_PCT  = 0.035  # 止損（3.5%，稍放寬避免雜訊止損，原3%）
-TP_PCT         = 0.09   # 止盈（9%，讓獲利單跑更遠，原6%）
-TRAILING_PCT   = 0.15   # 追蹤止盈備援（從最佳價格回落，軟體層）
+TRAILING_SL_PCT = 0.035  # 追蹤止損回調率 3.5%（交易所 TRAILING_STOP_MARKET）
+TP_PCT          = 0.15   # 固定止盈天花板 15%（讓追蹤止損先跑，暴漲才觸發）
+TRAILING_PCT    = 0.035  # 軟體追蹤備援（與交易所設定一致，交易所掛單失敗時生效）
 MAX_HOLD_HOURS = 36     # 最長持倉時間（原48，縮短避免套牢）
 TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
@@ -458,19 +458,29 @@ def open_pos(exchange, symbol, direction, positions):
 
         sl_id = tp_id = None
 
-        # 交易所止損（STOP_MARKET）
+        # 追蹤止損（TRAILING_STOP_MARKET）；失敗退回固定 STOP_MARKET
         try:
-            sl_price = round(
-                price * (1 - STOP_LOSS_PCT) if direction == 1 else price * (1 + STOP_LOSS_PCT), 4
-            )
-            sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
-                'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            tsl_order = exchange.create_order(symbol, 'trailing_stop_market', sl_side, amount, None, {
+                'callbackRate': TRAILING_SL_PCT * 100,
+                'closePosition': True,
+                'workingType':  'MARK_PRICE',
             })
-            sl_id = sl_order['id']
+            sl_id = tsl_order['id']
+            print(f"  ✅ 追蹤止損 {TRAILING_SL_PCT*100:.1f}% 已掛")
         except Exception as e:
-            print(f"  ⚠️ SL 訂單失敗 {symbol}: {e}")
+            print(f"  ⚠️ 追蹤止損失敗 ({e})，退回固定止損")
+            try:
+                sl_price = round(
+                    price * (1 - TRAILING_SL_PCT) if direction == 1 else price * (1 + TRAILING_SL_PCT), 4
+                )
+                sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
+                    'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                })
+                sl_id = sl_order['id']
+            except Exception as e2:
+                print(f"  ❌ 固定止損也失敗 {symbol}: {e2}")
 
-        # 交易所止盈（TAKE_PROFIT_MARKET）
+        # 固定止盈天花板（TAKE_PROFIT_MARKET）
         try:
             tp_price = round(
                 price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 4
@@ -494,8 +504,8 @@ def open_pos(exchange, symbol, direction, positions):
         save_positions(positions)
         side = 'LONG' if direction == 1 else 'SHORT'
         coin = symbol.split('/')[0]
-        sl_label = f"SL {STOP_LOSS_PCT*100:.0f}% {'✅' if sl_id else '⚠️'}"
-        tp_label = f"TP {TP_PCT*100:.0f}% {'✅' if tp_id else '⚠️'}"
+        sl_label = f"追蹤止損 {TRAILING_SL_PCT*100:.1f}% {'✅' if sl_id else '⚠️'}"
+        tp_label = f"止盈天花板 {TP_PCT*100:.0f}% {'✅' if tp_id else '⚠️'}"
         print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${MARGIN_USDT}×{LEVERAGE}x | {sl_label} {tp_label}")
         tg(
             f"{'🟢' if direction==1 else '🔴'} <b>開倉 {side} {coin}</b>\n"
@@ -596,15 +606,14 @@ def check_positions(exchange, positions):
                 positions[symbol]['peak_price'] = min(pos['peak_price'], price)
 
             peak    = positions[symbol]['peak_price']
-            pnl_pct = (price - pos['entry_price']) / pos['entry_price'] * d
             held_h  = (now - datetime.fromisoformat(pos['entry_time'])).total_seconds() / 3600
 
-            sl      = pnl_pct < -STOP_LOSS_PCT
+            # 追蹤止損備援（交易所掛單失敗時的軟體保險）
             trail   = (price < peak * (1 - TRAILING_PCT)) if d == 1 else (price > peak * (1 + TRAILING_PCT))
             timeout = held_h >= MAX_HOLD_HOURS
 
-            if sl or trail or timeout:
-                reason = '止損' if sl else ('追蹤止盈' if trail else '超時平倉')
+            if trail or timeout:
+                reason = '追蹤止損備援' if trail else '超時平倉'
                 close_pos(exchange, symbol, positions, reason)
         except Exception as e:
             print(f"  ⚠️ 檢查倉位 {symbol} 失敗: {e}")
