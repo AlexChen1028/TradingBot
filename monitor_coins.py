@@ -712,7 +712,7 @@ def main():
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")
-    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.0%}  TP {TP_PCT:.0%}  追蹤止盈備援 {TRAILING_PCT:.0%}")
+    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  追蹤SL {TRAILING_SL_PCT:.1%}  TP {TP_PCT:.0%}  備援 {TRAILING_PCT:.1%}")
     print(f"  最多 {MAX_POSITIONS} 個倉位  門檻 {MIN_SIGNALS}/4 個信號")
     print("=" * 60)
 
