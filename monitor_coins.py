@@ -22,7 +22,10 @@ MIN_LEADERBOARD_SIGNALS = 2   # 漲跌幅榜幣種（寬鬆）
 LEADERBOARD_MIN_PCT   = 3.0  # 24h 漲跌超過 3% 才考慮
 LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 999    # 無上限（原3→5）
-MARGIN_USDT    = 60     # 每筆保證金（USDT）（原50）
+MARGIN_USDT         = 60    # 預設保證金（fallback）
+MARGIN_BY_SIGNALS   = {2: 60, 3: 80, 4: 100}  # 動態保證金（依信號數量）
+LIMIT_ORDER_TIMEOUT = 15      # 限價掛單等待秒數，超過改市價
+LIMIT_SLIPPAGE      = 0.0002  # 限價優化幅度（做多掛低 / 做空掛高 0.02%）
 LEVERAGE       = 20     # 槓桿倍數
 TRAILING_SL_PCT = 0.035  # 追蹤止損回調率 3.5%（交易所 TRAILING_STOP_MARKET）
 TP_PCT          = 0.15   # 固定止盈天花板 15%（讓追蹤止損先跑，暴漲才觸發）
@@ -160,7 +163,7 @@ def check_breaking_news():
 
 
 # ── 交易記錄 ──────────────────────────────────────────────────────────────────
-def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry_time, reason):
+def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry_time, reason, margin_usdt=None):
     pnl_usdt = amount * (close_price - entry_price) * direction
     fee_usdt = amount * (entry_price + close_price) * TAKER_FEE
     record = {
@@ -172,7 +175,7 @@ def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry
         'pnl_usdt':     round(pnl_usdt, 4),
         'fee_usdt':     round(fee_usdt, 4),
         'net_pnl_usdt': round(pnl_usdt - fee_usdt, 4),
-        'margin_usdt':  MARGIN_USDT,
+        'margin_usdt':  margin_usdt if margin_usdt is not None else MARGIN_USDT,
         'entry_time':   entry_time,
         'close_time':   now8().isoformat(),
         'reason':       reason,
@@ -443,18 +446,56 @@ def analyze(exchange, symbol):
     }
 
 # ── 開倉 / 平倉 ───────────────────────────────────────────────────────────────
-def open_pos(exchange, symbol, direction, positions):
+def _enter_position(exchange, symbol, direction, amount):
+    """嘗試限價單進場，LIMIT_ORDER_TIMEOUT 秒未成交改市價。回傳實際成交均價。"""
+    try:
+        ref_price   = float(exchange.fetch_ticker(symbol)['last'])
+        limit_price = round(
+            ref_price * (1 - LIMIT_SLIPPAGE) if direction == 1
+            else ref_price * (1 + LIMIT_SLIPPAGE), 8
+        )
+        side  = 'buy' if direction == 1 else 'sell'
+        order = exchange.create_limit_order(symbol, side, amount, limit_price)
+        oid   = order['id']
+        print(f"  📋 限價單 {limit_price:.6g} 掛出，等待成交…")
+
+        deadline = time.time() + LIMIT_ORDER_TIMEOUT
+        while time.time() < deadline:
+            time.sleep(3)
+            o = exchange.fetch_order(oid, symbol)
+            if o['status'] == 'closed':
+                fill = float(o['average'] or limit_price)
+                print(f"  ✅ 限價成交 @ {fill:.6g}")
+                return fill
+            if o['status'] == 'canceled':
+                break
+
+        try:
+            exchange.cancel_order(oid, symbol)
+        except Exception:
+            pass
+        print("  ⏱ 限價逾時，改市價")
+    except Exception as e:
+        print(f"  ⚠️ 限價單失敗 ({e})，改市價")
+
+    side = 'buy' if direction == 1 else 'sell'
+    if direction == 1:
+        exchange.create_market_buy_order(symbol, amount)
+    else:
+        exchange.create_market_sell_order(symbol, amount)
+    return float(exchange.fetch_ticker(symbol)['last'])
+
+
+def open_pos(exchange, symbol, direction, positions, n_signals=3):
     try:
         exchange.set_margin_mode('isolated', symbol)
         exchange.set_leverage(LEVERAGE, symbol, params={'marginMode': 'isolated'})
-        price   = float(exchange.fetch_ticker(symbol)['last'])
-        amount  = round(MARGIN_USDT * LEVERAGE / price, 4)
-        sl_side = 'sell' if direction == 1 else 'buy'
+        ref_price = float(exchange.fetch_ticker(symbol)['last'])
+        margin    = MARGIN_BY_SIGNALS.get(n_signals, MARGIN_USDT)
+        amount    = round(margin * LEVERAGE / ref_price, 4)
+        sl_side   = 'sell' if direction == 1 else 'buy'
 
-        if direction == 1:
-            exchange.create_market_buy_order(symbol, amount)
-        else:
-            exchange.create_market_sell_order(symbol, amount)
+        price = _enter_position(exchange, symbol, direction, amount)
 
         sl_id = tp_id = None
 
@@ -498,6 +539,7 @@ def open_pos(exchange, symbol, direction, positions):
             'entry_time':  now8().isoformat(),
             'peak_price':  price,
             'amount':      amount,
+            'margin_usdt': margin,
             'sl_order_id': sl_id,
             'tp_order_id': tp_id,
         }
@@ -506,11 +548,11 @@ def open_pos(exchange, symbol, direction, positions):
         coin = symbol.split('/')[0]
         sl_label = f"追蹤止損 {TRAILING_SL_PCT*100:.1f}% {'✅' if sl_id else '⚠️'}"
         tp_label = f"止盈天花板 {TP_PCT*100:.0f}% {'✅' if tp_id else '⚠️'}"
-        print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${MARGIN_USDT}×{LEVERAGE}x | {sl_label} {tp_label}")
+        print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${margin}×{LEVERAGE}x ({n_signals}信號) | {sl_label} {tp_label}")
         tg(
             f"{'🟢' if direction==1 else '🔴'} <b>開倉 {side} {coin}</b>\n"
             f"進場：{price:.4f} USDT\n"
-            f"數量：{amount}  保證金：${MARGIN_USDT}×{LEVERAGE}x 逐倉\n"
+            f"數量：{amount}  保證金：${margin}×{LEVERAGE}x 逐倉（{n_signals} 信號）\n"
             f"{sl_label} | {tp_label}"
         )
     except Exception as e:
@@ -552,7 +594,7 @@ def close_pos(exchange, symbol, positions, reason):
             f"毛利：{pnl_usdt:+.2f} U  手續費：-{fee_usdt:.2f} U\n"
             f"<b>淨利：{net_usdt:+.2f} U</b>  原因：{reason}"
         )
-        log_altcoin_trade(symbol, pos['direction'], ep, price, amt, pos.get('entry_time', ''), reason)
+        log_altcoin_trade(symbol, pos['direction'], ep, price, amt, pos.get('entry_time', ''), reason, pos.get('margin_usdt'))
         del positions[symbol]
         save_positions(positions)
     except Exception as e:
@@ -593,7 +635,7 @@ def check_positions(exchange, positions):
                         f"毛利：{pnl_usdt:+.2f} U  手續費：-{fee_usdt:.2f} U\n"
                         f"<b>淨利：{net_usdt:+.2f} U</b>"
                     )
-                    log_altcoin_trade(symbol, d, ep, price, amt, pos.get('entry_time', ''), reason)
+                    log_altcoin_trade(symbol, d, ep, price, amt, pos.get('entry_time', ''), reason, pos.get('margin_usdt'))
                     del positions[symbol]
                     save_positions(positions)
                     continue
@@ -680,7 +722,7 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions):
             dir_str  = '做多' if lb_direction == 1 else '做空'
             print(f"  🎯 {sym_name} {pct:+.1f}% | {result['n']} 個信號 → {dir_str}")
             tg(f"🎯 <b>漲跌幅榜進場</b>\n{sym_name} {pct:+.1f}% | {result['n']}/4 信號\n方向：{'🟢 做多' if lb_direction==1 else '🔴 做空'}")
-            open_pos(exchange_priv, symbol, lb_direction, positions)
+            open_pos(exchange_priv, symbol, lb_direction, positions, result['n'])
         time.sleep(0.2)
 
 
@@ -697,7 +739,7 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions):
         result = analyze(exchange_pub, symbol)
         if result and result['n'] >= MIN_SIGNALS:
             print(f"  🔔 {symbol.split('/')[0]} {result['n']} 個信號 → 開倉")
-            open_pos(exchange_priv, symbol, result['direction'], positions)
+            open_pos(exchange_priv, symbol, result['direction'], positions, result['n'])
         time.sleep(0.15)
 
 def main():
