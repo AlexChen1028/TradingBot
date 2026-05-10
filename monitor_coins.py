@@ -210,14 +210,30 @@ def send_hourly_position_report():
         except Exception:
             lines.append(f"{side} <b>{coin}</b> 20x逐倉（山寨）  進場 {ep:.4f}")
 
-    if not lines:
-        return  # 全空倉就不發
+    # 今日累積盈虧
+    today_start = now8().replace(hour=0, minute=0, second=0, microsecond=0)
+    day_net = 0
+    p_trades = Path(ALTCOIN_TRADES_FILE)
+    if p_trades.exists():
+        for line in p_trades.read_text(encoding='utf-8').splitlines():
+            if not line.strip(): continue
+            try:
+                r = json.loads(line)
+                if datetime.fromisoformat(r.get('close_time', '1970-01-01')) >= today_start:
+                    day_net += r.get('net_pnl_usdt', 0)
+            except Exception:
+                pass
 
-    body = '\n\n'.join(lines)
+    if not lines and day_net == 0:
+        return  # 全空倉且今日無交易就不發
+
+    body    = '\n\n'.join(lines) if lines else '（目前無持倉）'
+    day_str = f"\n\n📅 今日累積：<b>{'🟢' if day_net >= 0 else '🔴'} {day_net:+.2f} U</b>"
     tg(
         f"📋 <b>山寨幣持倉公告</b>\n"
         f"⏰ {now}\n\n"
         f"{body}"
+        f"{day_str}"
     )
 
 
@@ -250,7 +266,6 @@ def send_performance_report():
             continue
 
         gross  = sum(r.get('pnl_usdt', 0) for r in rows)
-        # 舊記錄若沒有 fee_usdt 欄位，自動估算
         fee    = sum(
             r.get('fee_usdt') if r.get('fee_usdt') is not None
             else r.get('amount', 0) * (r.get('entry_price', 0) + r.get('close_price', 0)) * TAKER_FEE
@@ -258,8 +273,9 @@ def send_performance_report():
         )
         net    = gross - fee
         margin = sum(r.get('margin_usdt', MARGIN_USDT) for r in rows)
+        wins   = sum(1 for r in rows if r.get('net_pnl_usdt', r.get('pnl_usdt', 0)) > 0)
 
-        coin_stats[label] = {'n': len(rows), 'gross': gross, 'fee': fee, 'net': net, 'margin': margin}
+        coin_stats[label] = {'n': len(rows), 'gross': gross, 'fee': fee, 'net': net, 'margin': margin, 'wins': wins}
         total_gross  += gross
         total_fee    += fee
         total_net    += net
@@ -270,12 +286,14 @@ def send_performance_report():
         tg_trading(f"📊 <b>週績效報告（過去7天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
         return
 
-    roi = total_net / total_margin * 100 if total_margin > 0 else 0
-    emoji = '📈' if total_net >= 0 else '📉'
+    roi         = total_net / total_margin * 100 if total_margin > 0 else 0
+    total_wins  = sum(s['wins'] for s in coin_stats.values())
+    total_wr    = total_wins / total_trades * 100 if total_trades > 0 else 0
+    emoji       = '📈' if total_net >= 0 else '📉'
 
     coin_lines = '\n'.join(
         f"{'🟢' if s['net'] >= 0 else '🔴'} {label:<4}  {s['n']}筆  "
-        f"淨利 <b>{s['net']:+.2f} U</b>  費 {s['fee']:.2f} U"
+        f"勝率 {s['wins']/s['n']*100:.0f}%  淨利 <b>{s['net']:+.2f} U</b>  費 {s['fee']:.2f} U"
         for label, s in coin_stats.items()
     )
 
@@ -283,7 +301,7 @@ def send_performance_report():
         f"{emoji} <b>山寨幣週績效報告（過去7天）</b>\n"
         f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
         f"{coin_lines}\n\n"
-        f"總交易：{total_trades} 筆\n"
+        f"總交易：{total_trades} 筆  勝率 <b>{total_wr:.0f}%</b>\n"
         f"毛利潤：{total_gross:+.2f} U\n"
         f"手續費：-{total_fee:.2f} U\n"
         f"<b>淨利潤：{total_net:+.2f} U</b>\n"
@@ -359,6 +377,14 @@ def fetch_funding(exchange, symbol):
     except Exception:
         return None, None
 
+# ── 技術指標 ──────────────────────────────────────────────────────────────────
+def _rsi(series, period=14):
+    delta = series.diff()
+    gain  = delta.clip(lower=0).rolling(period).mean()
+    loss  = (-delta.clip(upper=0)).rolling(period).mean()
+    rs    = gain / loss.replace(0, 1e-9)
+    return 100 - 100 / (1 + rs)
+
 # ── 信號分析 ──────────────────────────────────────────────────────────────────
 def analyze(exchange, symbol):
     df = fetch_1h(exchange, symbol)
@@ -410,6 +436,11 @@ def analyze(exchange, symbol):
     else:
         direction = 1
 
+    # RSI 14 + EMA50 趨勢
+    rsi   = float(_rsi(df['close'], 14).iloc[-1])
+    ema50 = float(df['close'].ewm(span=50, adjust=False).mean().iloc[-1])
+    trend = 1 if cur_price > ema50 else -1
+
     return {
         'symbol':    symbol,
         'price':     cur_price,
@@ -417,6 +448,8 @@ def analyze(exchange, symbol):
         'details':   details,
         'n':         len(signals),
         'direction': direction,
+        'rsi':       rsi,
+        'trend':     trend,
     }
 
 # ── 開倉 / 平倉 ───────────────────────────────────────────────────────────────
@@ -616,6 +649,28 @@ def check_positions(exchange, positions):
             ep      = pos['entry_price']
             held_h  = (now - datetime.fromisoformat(pos['entry_time'])).total_seconds() / 3600
 
+            # 保本止損：獲利 ≥ 3% 後把止損移到進場價
+            gain_pct = (price - ep) / ep * d
+            if gain_pct >= 0.03 and not pos.get('breakeven'):
+                sl_side = 'sell' if d == 1 else 'buy'
+                try:
+                    old_sl = pos.get('sl_order_id')
+                    if old_sl:
+                        try: exchange.cancel_order(old_sl, symbol)
+                        except Exception: pass
+                    be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
+                    be_order = exchange.create_order(symbol, 'stop_market', sl_side, pos['amount'], None, {
+                        'stopPrice': be_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                    })
+                    positions[symbol]['sl_order_id'] = be_order['id']
+                    positions[symbol]['breakeven']   = True
+                    save_positions(positions)
+                    coin = symbol.split('/')[0]
+                    print(f"  🔒 {coin} 保本止損啟動（進場 {ep:.4f}，現價 {price:.4f}，獲利 {gain_pct:.1%}）")
+                    tg(f"🔒 <b>保本止損啟動</b> {coin}\n獲利已達 {gain_pct:.1%}，止損移至進場價附近 {be_price:.4f}")
+                except Exception as e:
+                    print(f"  ⚠️ 保本止損失敗 {symbol}: {e}")
+
             sl      = (price < ep * (1 - STOP_LOSS_PCT)) if d == 1 else (price > ep * (1 + STOP_LOSS_PCT))
             trail   = (price < peak * (1 - TRAILING_PCT)) if d == 1 else (price > peak * (1 + TRAILING_PCT))
             timeout = held_h >= MAX_HOLD_HOURS
@@ -735,12 +790,18 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_
         if symbol in positions or len(positions) >= MAX_POSITIONS:
             break
         if market_bias == -1 and lb_direction == 1:
-            continue  # 大環境偏空，跳過做多
+            continue
         if market_bias == 1 and lb_direction == -1:
-            continue  # 大環境偏多，跳過做空
+            continue
         result = analyze(exchange_pub, symbol)
         if result is None:
             continue
+        if lb_direction == 1 and result.get('rsi', 50) >= 70:
+            continue  # RSI 超買，跳過做多
+        if lb_direction == -1 and result.get('rsi', 50) <= 30:
+            continue  # RSI 超賣，跳過做空
+        if lb_direction != result.get('trend', lb_direction):
+            continue  # 方向不符 EMA50 趨勢
         if result['n'] >= MIN_LEADERBOARD_SIGNALS:
             sym_name = symbol.split('/')[0]
             dir_str  = '做多' if lb_direction == 1 else '做空'
@@ -762,12 +823,19 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             continue
         result = analyze(exchange_pub, symbol)
         if result and result['n'] >= MIN_SIGNALS:
-            if market_bias == -1 and result['direction'] == 1:
+            d = result['direction']
+            if d == 1 and result.get('rsi', 50) >= 70:
+                continue  # RSI 超買，跳過做多
+            if d == -1 and result.get('rsi', 50) <= 30:
+                continue  # RSI 超賣，跳過做空
+            if d != result.get('trend', d):
+                continue  # 方向不符 EMA50 趨勢
+            if market_bias == -1 and d == 1:
                 continue  # 大環境偏空，跳過做多
-            if market_bias == 1 and result['direction'] == -1:
+            if market_bias == 1 and d == -1:
                 continue  # 大環境偏多，跳過做空
-            print(f"  🔔 {symbol.split('/')[0]} {result['n']} 個信號 → 開倉")
-            open_pos(exchange_priv, symbol, result['direction'], positions, result['n'])
+            print(f"  🔔 {symbol.split('/')[0]} {result['n']} 個信號  RSI {result['rsi']:.0f}  → 開倉")
+            open_pos(exchange_priv, symbol, d, positions, result['n'])
         time.sleep(0.15)
 
 def main():
