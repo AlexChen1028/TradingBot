@@ -75,6 +75,10 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 - Binance 24h top gainers / losers → auto-enter on 2+ signals
 - Min 24h move ≥ 3% to qualify
 
+**Entry filters (every scan):**
+- RSI 14: skip long if RSI ≥ 70 (overbought); skip short if RSI ≤ 30 (oversold)
+- EMA 50 (1h): direction must agree with EMA50 trend
+
 **Macro filter (hourly):**
 - Fetches BTC 24h change + SPY / QQQ daily return
 - Each above threshold casts a bull/bear vote (BTC ±2%, SPY/QQQ ±0.5%)
@@ -88,6 +92,7 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 | Max open positions | Unlimited |
 | Stop-loss | Exchange `STOP_MARKET` 3.5% from entry |
 | Take-profit | Exchange `TAKE_PROFIT_MARKET` 9% from entry |
+| Break-even SL | Auto-move SL to entry price once gain ≥ 3% |
 | Software trailing backup | 15% from peak (activates if exchange order fails) |
 | Max hold time | 36 hours |
 
@@ -99,11 +104,11 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 - Sends to Telegram group with 🟢 bullish / 🔴 bearish / ⚠️ neutral tag
 
 ### Telegram Notifications
-- **Every hour (整點)**: consolidated position report — all BTC/ETH/SOL + altcoin positions in one message
-- **On open**: entry price, size, trailing SL confirmation, TP ceiling
+- **Every hour (整點)**: altcoin positions + today's cumulative P&L
+- **On open**: entry price, size, SL/TP confirmation, signal count & margin used
 - **On close**: gross profit, fee, net result, close reason
 - **SL/TP trigger**: exchange auto-close detected and logged
-- **Weekly (every 7 days)**: rolling 7-day performance — net profit, fees, ROI per coin
+- **Weekly (every 7 days)**: rolling 7-day performance — net profit, fees, win rate, ROI
 - **Daily**: opening vs closing balance report
 - **Heartbeat**: once every 24h to confirm bot is alive
 - **Breaking news**: real-time market-moving headlines with sentiment tag
