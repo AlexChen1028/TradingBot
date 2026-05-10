@@ -670,8 +670,63 @@ def send_leaderboard(exchange, top_n=10):
         print(f"  漲跌幅榜錯誤：{e}")
     return candidates
 
+# ── 市場大環境過濾 ────────────────────────────────────────────────────────────
+_bias_cache = {'bias': 0, 'reason': '初始化', 'ts': 0}
+
+def get_market_bias(exchange):
+    """
+    每小時更新市場大環境偏向。BTC + SPY + QQQ 三者投票，2 票以上才設方向。
+    返回 (bias: int, reason: str)   1=偏多  -1=偏空  0=中性
+    """
+    global _bias_cache
+    if time.time() - _bias_cache['ts'] < 3600:
+        return _bias_cache['bias'], _bias_cache['reason']
+
+    votes_bull, votes_bear, parts = 0, 0, []
+
+    # BTC 24h 漲跌
+    try:
+        btc_pct = exchange.fetch_ticker('BTC/USDT').get('percentage') or 0
+        if btc_pct > 2:
+            votes_bull += 1; parts.append(f"BTC {btc_pct:+.1f}%↑")
+        elif btc_pct < -2:
+            votes_bear += 1; parts.append(f"BTC {btc_pct:+.1f}%↓")
+        else:
+            parts.append(f"BTC {btc_pct:+.1f}% —")
+    except Exception:
+        parts.append("BTC err")
+
+    # SPY / QQQ 最新日漲跌
+    try:
+        import yfinance as yf
+        for sym in ['SPY', 'QQQ']:
+            df = yf.download(sym, period='3d', interval='1d', progress=False, auto_adjust=True)
+            if df is not None and len(df) >= 2:
+                pct = float((df['Close'].iloc[-1] / df['Close'].iloc[-2] - 1) * 100)
+                if pct > 0.5:
+                    votes_bull += 1; parts.append(f"{sym} {pct:+.1f}%↑")
+                elif pct < -0.5:
+                    votes_bear += 1; parts.append(f"{sym} {pct:+.1f}%↓")
+                else:
+                    parts.append(f"{sym} {pct:+.1f}% —")
+    except Exception as e:
+        parts.append(f"SPY/QQQ err")
+
+    if votes_bear >= 2:
+        bias, label = -1, '🔴 偏空'
+    elif votes_bull >= 2:
+        bias, label = 1, '🟢 偏多'
+    else:
+        bias, label = 0, '⚪ 中性'
+
+    reason = f"{label}（{' | '.join(parts)}）"
+    _bias_cache.update({'bias': bias, 'reason': reason, 'ts': time.time()})
+    print(f"  🌍 大環境：{reason}")
+    return bias, reason
+
+
 # ── 主迴圈 ────────────────────────────────────────────────────────────────────
-def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions):
+def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_bias=0):
     """根據漲跌幅榜候選幣種嘗試開倉（寬鬆門檻：2 個信號）"""
     if not candidates:
         return
@@ -679,10 +734,13 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions):
     for symbol, lb_direction, pct in candidates:
         if symbol in positions or len(positions) >= MAX_POSITIONS:
             break
+        if market_bias == -1 and lb_direction == 1:
+            continue  # 大環境偏空，跳過做多
+        if market_bias == 1 and lb_direction == -1:
+            continue  # 大環境偏多，跳過做空
         result = analyze(exchange_pub, symbol)
         if result is None:
             continue
-        # 寬鬆門檻：只需 2 個信號，方向由漲跌幅榜決定
         if result['n'] >= MIN_LEADERBOARD_SIGNALS:
             sym_name = symbol.split('/')[0]
             dir_str  = '做多' if lb_direction == 1 else '做空'
@@ -692,7 +750,7 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions):
         time.sleep(0.2)
 
 
-def scan(exchange_pub, exchange_priv, watch_coins, positions):
+def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
     now = now8().strftime('%Y-%m-%d %H:%M +08')
     print(f"\n[{now}] 掃描 {len(watch_coins)} 個幣種  倉位 {len(positions)}/{MAX_POSITIONS}")
 
@@ -704,6 +762,10 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions):
             continue
         result = analyze(exchange_pub, symbol)
         if result and result['n'] >= MIN_SIGNALS:
+            if market_bias == -1 and result['direction'] == 1:
+                continue  # 大環境偏空，跳過做多
+            if market_bias == 1 and result['direction'] == -1:
+                continue  # 大環境偏多，跳過做空
             print(f"  🔔 {symbol.split('/')[0]} {result['n']} 個信號 → 開倉")
             open_pos(exchange_priv, symbol, result['direction'], positions, result['n'])
         time.sleep(0.15)
@@ -720,7 +782,7 @@ def main():
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")
-    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  追蹤SL {TRAILING_SL_PCT:.1%}  TP {TP_PCT:.0%}  備援 {TRAILING_PCT:.1%}")
+    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.1%}  TP {TP_PCT:.0%}  備援 {TRAILING_PCT:.0%}")
     print(f"  最多 {MAX_POSITIONS} 個倉位  門檻 {MIN_SIGNALS}/4 個信號")
     print("=" * 60)
 
@@ -730,6 +792,7 @@ def main():
     last_leaderboard = 0  # 立刻發第一次
     last_report_date = None  # 每天發一次週績效報告
     last_report_hour = -1   # 整點持倉公告
+    market_bias      = 0    # 初始中性，啟動時立刻抓一次
 
     while True:
         try:
@@ -741,10 +804,11 @@ def main():
 
             lb_candidates = []
             if time.time() - last_leaderboard >= LEADERBOARD_INTERVAL:
-                lb_candidates = send_leaderboard(exchange_pub)
+                market_bias, _ = get_market_bias(exchange_pub)  # 每小時更新大環境
+                lb_candidates  = send_leaderboard(exchange_pub)
                 last_leaderboard = time.time()
                 if lb_candidates:
-                    scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions)
+                    scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions, market_bias)
 
             # 整點發彙總持倉報告（分鐘數 < 2 且這小時還沒發過）
             _now = now8()
@@ -759,7 +823,7 @@ def main():
                 last_report_date = today
 
             check_breaking_news()
-            scan(exchange_pub, exchange_priv, watch_coins, positions)
+            scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias)
 
         except KeyboardInterrupt:
             print("\n監控停止。")
