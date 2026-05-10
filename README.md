@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-10 16:03 +08
+> Last updated: 2026-05-10 16:07 +08
 
 ---
 
@@ -74,6 +74,11 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 **Leaderboard trading (hourly):**
 - Binance 24h top gainers / losers → auto-enter on 2+ signals
 - Min 24h move ≥ 3% to qualify
+
+**Macro filter (hourly):**
+- Fetches BTC 24h change + SPY / QQQ daily return
+- Each above threshold casts a bull/bear vote (BTC ±2%, SPY/QQQ ±0.5%)
+- 2+ bear votes → skip all longs; 2+ bull votes → skip all shorts; otherwise neutral
 
 **Position parameters:**
 
