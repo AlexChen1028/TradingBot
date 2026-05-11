@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-11 14:40 +08
+> Last updated: 2026-05-11 14:46 +08
 
 ---
 
@@ -91,7 +91,7 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 | Margin per trade | 2 signals: $60 / 3 signals: $80 / 4 signals: $100 × 20x isolated |
 | Max open positions | Unlimited |
 | Stop-loss | Exchange `STOP_MARKET` 3.5% from entry |
-| Take-profit | Exchange `TAKE_PROFIT_MARKET` 9% from entry |
+| Take-profit | Exchange `TAKE_PROFIT_MARKET` 7% from entry |
 | Break-even SL | Auto-move SL to entry price once gain ≥ 3% |
 | Software trailing backup | 15% from peak (activates if exchange order fails) |
 | Max hold time | 36 hours |
