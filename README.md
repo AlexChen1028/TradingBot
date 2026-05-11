@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-10 16:14 +08
+> Last updated: 2026-05-11 14:40 +08
 
 ---
 
@@ -65,18 +65,18 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
 ### Altcoin Monitor (`monitor_coins.py`)
 
-**Signal sources (every 15 minutes):**
+**Signal sources (every 15 minutes, 2+ required to enter):**
 - Volume spike ≥ 1.5× 24h average
 - Price compression (recent range ≤ 50% of average)
 - Within 3% of 14-day high (breakout proximity)
 - Funding rate surge ≥ 0.02%
 
-**Leaderboard trading (hourly):**
+**Leaderboard trading (hourly, no TG notification):**
 - Binance 24h top gainers / losers → auto-enter on 2+ signals
 - Min 24h move ≥ 3% to qualify
 
 **Entry filters (every scan):**
-- RSI 14: skip long if RSI ≥ 70 (overbought); skip short if RSI ≤ 30 (oversold)
+- RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
 
 **Macro filter (hourly):**

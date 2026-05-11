@@ -17,7 +17,7 @@ SCAN_INTERVAL        = 15 * 60      # 每 15 分鐘掃一次信號
 UPDATE_INTERVAL      = 2  * 60 * 60 # 每 2 小時更新幣種清單
 LEADERBOARD_INTERVAL = 60 * 60      # 每小時發漲跌幅榜
 
-MIN_SIGNALS           = 3   # 一般掃描門檻
+MIN_SIGNALS           = 2   # 一般掃描門檻
 MIN_LEADERBOARD_SIGNALS = 2   # 漲跌幅榜幣種（寬鬆）
 LEADERBOARD_MIN_PCT   = 3.0  # 24h 漲跌超過 3% 才考慮
 LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
@@ -705,12 +705,7 @@ def send_leaderboard(exchange, top_n=10):
         now = now8().strftime('%Y-%m-%d %H:%M +08')
         g_lines = '\n'.join(f"  🟢 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in g.iterrows())
         l_lines = '\n'.join(f"  🔴 {r['symbol']:<12} {r['pct']:>+.2f}%" for _, r in l.iterrows())
-        tg(
-            f"📊 <b>Binance 現貨漲跌榜（24h）</b>\n⏰ {now}\n\n"
-            f"🏆 <b>漲幅前 {top_n} 名</b>\n{g_lines}\n\n"
-            f"💀 <b>跌幅前 {top_n} 名</b>\n{l_lines}"
-        )
-        print(f"  → 漲跌幅榜已發送（{len(rows)} 幣種）")
+        print(f"  → 漲跌幅榜掃描完成（{len(rows)} 幣種）")
 
         # 挑選交易候選：漲超過 3% → 做多，跌超過 3% → 做空
         markets = exchange.markets or {}
@@ -757,7 +752,8 @@ def get_market_bias(exchange):
         for sym in ['SPY', 'QQQ']:
             df = yf.download(sym, period='3d', interval='1d', progress=False, auto_adjust=True)
             if df is not None and len(df) >= 2:
-                pct = float((df['Close'].iloc[-1] / df['Close'].iloc[-2] - 1) * 100)
+                close = df['Close'].squeeze()
+                pct = float((close.iloc[-1] / close.iloc[-2] - 1) * 100)
                 if pct > 0.5:
                     votes_bull += 1; parts.append(f"{sym} {pct:+.1f}%↑")
                 elif pct < -0.5:
@@ -796,9 +792,9 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_
         result = analyze(exchange_pub, symbol)
         if result is None:
             continue
-        if lb_direction == 1 and result.get('rsi', 50) >= 70:
+        if lb_direction == 1 and result.get('rsi', 50) >= 80:
             continue  # RSI 超買，跳過做多
-        if lb_direction == -1 and result.get('rsi', 50) <= 30:
+        if lb_direction == -1 and result.get('rsi', 50) <= 20:
             continue  # RSI 超賣，跳過做空
         if lb_direction != result.get('trend', lb_direction):
             continue  # 方向不符 EMA50 趨勢
@@ -824,9 +820,9 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
         result = analyze(exchange_pub, symbol)
         if result and result['n'] >= MIN_SIGNALS:
             d = result['direction']
-            if d == 1 and result.get('rsi', 50) >= 70:
+            if d == 1 and result.get('rsi', 50) >= 80:
                 continue  # RSI 超買，跳過做多
-            if d == -1 and result.get('rsi', 50) <= 30:
+            if d == -1 and result.get('rsi', 50) <= 20:
                 continue  # RSI 超賣，跳過做空
             if d != result.get('trend', d):
                 continue  # 方向不符 EMA50 趨勢
