@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-15 23:52 +08
+> Last updated: 2026-05-16 00:05 +08
 
 ---
 
@@ -388,6 +388,40 @@ docker compose restart coin-monitor
 Setting `STATS_FROM` ensures the hourly P&L and weekly reports ignore any trades recorded before the reset — no need to delete `altcoin_trades.jsonl`.
 
 Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation are isolated — they do not affect new trades on other symbols and can be ignored.
+
+---
+
+## Changelog
+
+### 2026-05-16
+- `STATS_FROM` env var：Demo 重置後設定此日期，整點 P&L 和週報只計算之後的交易，無需刪除 `altcoin_trades.jsonl`
+
+### 2026-05-15
+- `scripts/auto_kol_update.py`：每日自動抓取 KOL YouTube 影片字幕 → Claude 分析 → 更新 `notes/youtube-insights.md` → 高信心參數自動套用 → git push → TG 通知
+- `notes/youtube-insights.md`：加密龐克頻道初始洞察（3 支影片）+ 可實作映射表
+- README 新增 Strategy Reference 段落，對應 KOL 概念與現有特徵
+
+### 2026-05-11
+- 一般掃描信號門檻 3→2，漲跌幅榜移除 TG 通知（保留交易邏輯）
+- RSI 過濾門檻 70/30→80/20（放寬，避免漲幅榜幣種被全部擋掉）
+- 修復 yfinance `FutureWarning`（`close.squeeze()` 取代直接 `float()`）
+- 止盈 9%→7%
+
+### 2026-05-10
+- 保本止損：獲利 ≥ 3% 後自動把止損移至進場價附近
+- RSI-14 進場過濾（做多 RSI < 80 / 做空 RSI > 20）
+- EMA-50 趨勢過濾（方向必須與 EMA50 一致）
+- 大環境投票過濾：BTC ±2%、SPY ±0.5%、QQQ ±0.5% 各投票；2 票偏空→跳過做多，2 票偏多→跳過做空
+- 整點報告加入今日累積 P&L
+- 週報加入勝率
+
+### 2026-05-07（revert）
+- 追蹤止損改回固定止損：SL 3.5% + TP 9% + 軟體備援 15%（追蹤止損期間績效轉負，還原）
+
+### 2026-05-06
+- 動態保證金：2 信號 $60 / 3 信號 $80 / 4 信號 $100
+- 限價單進場：掛偏 0.02% 的限價單，15 秒未成交改市價
+- 修復啟動時 `STOP_LOSS_PCT` NameError crash
 
 ---
 
