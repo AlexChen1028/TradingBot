@@ -258,6 +258,13 @@ def detect_regime(df: pd.DataFrame) -> str:
     """
     返回 'trending'（趨勢市）/ 'ranging'（震盪市）/ 'neutral'。
     使用 ATR 比率：近期 ATR 相對於 50 根均值。
+
+    對應市場觀點（KOL: 加密龐克, notes/youtube-insights.md §一）：
+      • 'ranging' → 對應「熊市中罕見的強勢收斂」場景，價格被擠壓在關鍵均線
+        與成本線之間。此時 open_position() 會將倉位降到 50%，避免在洗盤
+        區間吃掉本金。
+      • 'trending' → 對應「強力挑戰均線」突破場景，可全倉執行訊號。
+      • 'neutral' → 過渡狀態，照原訊號執行但保留 MIN_HOLD_HOURS 保護。
     """
     try:
         h, l, c = df['high'], df['low'], df['close']

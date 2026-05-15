@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-11 14:46 +08
+> Last updated: 2026-05-15 23:45 +08
 
 ---
 
@@ -33,6 +33,29 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
            ▼
    Trading Bot  &  Alert Bot  (both in same group)
 ```
+
+---
+
+## Strategy Reference / Market-View Inputs
+
+Beyond pure ML, the bot's feature set and risk-management heuristics are informed by external
+market-view sources. Most recent reference: KOL analysis from **@crypto_punks (加密龐克)** —
+see [`notes/youtube-insights.md`](notes/youtube-insights.md) for the full digest.
+
+Key concepts mapped to existing features:
+
+| KOL Concept | Implementation |
+|---|---|
+| 軋空燃料 / 嘎空動能 (squeeze fuel) | `fr_z`, `fr_ma`, `fr_cumsum` in `data.py` |
+| 資費跟著趨勢 vs 背離 (momentum vs contrarian regime) | `fr_trend_corr`, `sent_trend_corr` |
+| 收斂盤整 vs 突破 (regime detection) | `detect_regime()` in `main.py` (ATR ratio) |
+| 右側交易確認 (higher-timeframe confirmation) | 1h + 4h `MULTI_TF` agreement gate |
+| 機構動向 / ETF 流向 | F&G index + news sentiment (proxy; direct ETF flow planned) |
+
+Gaps currently noted (see notes file):
+- **200-day MA (牛熊分界線)** — not in feature set (max is EMA50)
+- **Short-term holder cost basis** — requires on-chain data
+- **Direct ETF flow / whale tx data** — not yet wired
 
 ---
 

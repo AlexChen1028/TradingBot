@@ -327,15 +327,24 @@ def add_features(df: pd.DataFrame, ref_btc: pd.DataFrame = None,
     df['fng_mom']  = df['fng_norm'].diff().fillna(0)
 
     # ── Funding rate features ──────────────────────────────────────────────
+    # Funding rate captures the "squeeze fuel" concept (KOL: 加密龐克, see
+    # notes/youtube-insights.md §二). Market intuition:
+    #   • Positive FR + price testing support  → over-leveraged longs, vulnerable
+    #     to flush-out by main players (主力誘空 → 嘎空 燃料堆積)
+    #   • Negative FR + price testing resistance → over-leveraged shorts,
+    #     vulnerable to squeeze higher (向上嘎空 燃料堆積)
+    #   • FR sign flipping under news event = liquidity rotation signal
     fr_raw = df['funding_rate_raw'].fillna(0)      # 0 = neutral before perps
     df['fr_norm']   = fr_raw * 1000                # scale: ~-1..1 typical range
     # 7-day (21 periods of 8h) rolling z-score → how extreme is current FR?
+    # Used as a "regime extremity" proxy in compute_sample_weights (high |z| → upweight).
     fr_roll_mean = fr_raw.rolling(21).mean()
     fr_roll_std  = fr_raw.rolling(21).std().clip(lower=1e-9)
     df['fr_z']    = (fr_raw - fr_roll_mean) / fr_roll_std
-    # 24h MA (3 periods of 8h)
+    # 24h MA (3 periods of 8h) — short-term FR direction
     df['fr_ma']   = fr_raw.rolling(3).mean() * 1000
-    # 28-day cumulative funding cost (positive = longs paid out over period)
+    # 28-day cumulative funding cost (positive = longs paid out over period).
+    # Heavy positive cumsum → longs have been paying for a long time → exhaustion risk.
     df['fr_cumsum'] = fr_raw.rolling(84).sum() * 1000   # 84×8h = 28d
 
     # ── News sentiment features ────────────────────────────────────────────
