@@ -37,6 +37,7 @@ POSITIONS_FILE      = 'positions_altcoin.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
 TAKER_FEE           = 0.0005  # Binance futures taker fee 0.05%
 NEWS_SEEN_FILE      = 'news_seen.json'
+STATS_FROM          = os.getenv('STATS_FROM', '')  # e.g. '2026-05-16' — ignore trades before this date
 
 # 重大新聞偵測：含以下關鍵字才考慮
 NEWS_KEYWORDS = [
@@ -219,8 +220,10 @@ def send_hourly_position_report():
             if not line.strip(): continue
             try:
                 r = json.loads(line)
-                if datetime.fromisoformat(r.get('close_time', '1970-01-01')) >= today_start:
-                    day_net += r.get('net_pnl_usdt', 0)
+                ct = r.get('close_time', '1970-01-01')
+                if datetime.fromisoformat(ct) >= today_start:
+                    if not STATS_FROM or ct >= STATS_FROM:
+                        day_net += r.get('net_pnl_usdt', 0)
             except Exception:
                 pass
 
@@ -257,7 +260,10 @@ def send_performance_report():
                 continue
             try:
                 r = json.loads(line)
-                if datetime.fromisoformat(r.get('close_time', '1970-01-01')) < cutoff:
+                ct = r.get('close_time', '1970-01-01')
+                if datetime.fromisoformat(ct) < cutoff:
+                    continue
+                if STATS_FROM and ct < STATS_FROM:
                     continue
                 rows.append(r)
             except Exception:

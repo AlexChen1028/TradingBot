@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-15 23:45 +08
+> Last updated: 2026-05-15 23:52 +08
 
 ---
 
@@ -379,10 +379,14 @@ If you want to clear all tracked altcoin positions and start from a clean slate:
 # 1. Reset Demo account balance via Binance UI (Futures → Reset Demo Account)
 # 2. Clear local position tracking file
 echo '{}' > positions_altcoin.json
-# 3. Pull latest code and restart bot
+# 3. Set STATS_FROM in .env so reports only count trades after the reset date
+#    echo "STATS_FROM=2026-05-16" >> .env   ← use today's date
+# 4. Pull latest code and restart bot
 cd ~/TradingBot && git pull
 docker compose restart coin-monitor
 ```
+Setting `STATS_FROM` ensures the hourly P&L and weekly reports ignore any trades recorded before the reset — no need to delete `altcoin_trades.jsonl`.
+
 Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation are isolated — they do not affect new trades on other symbols and can be ignored.
 
 ---
