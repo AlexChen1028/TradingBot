@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-16 13:30 +08
+> Last updated: 2026-05-16 14:00 +08
 
 ---
 
@@ -406,6 +406,10 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
   - BTC 假突破風險時，`scan()` 和 `scan_leaderboard()` 均跳過所有 LONG 進場
   - `analyze()` 信號 4 新增「資費轉負（嘎空燃料）」觸發條件（除了原有劇變外）
 - `monitor_coins.py` `WATCH_ALWAYS`：BTC/ETH/SOL 加入常駐掃描清單，三個 ML bot 暫置，改由 coin-monitor 以技術分析信號交易
+- `monitor_coins.py` `analyze_major()`：主流幣（BTC/ETH/SOL）獨立分析邏輯，與山寨幣分開
+  - 信號：EMA9/21/50 排列、MACD histogram 連續方向、成交量 ≥1.3x 均量、資費翻轉
+  - 方向由多數決（bull 信號數 vs bear 信號數），非預設做多
+  - `analyze_dispatch()` 自動路由：主流幣用 `analyze_major`，其他用 `analyze`
 - `STATS_FROM` env var：Demo 重置後設定此日期，整點 P&L 和週報只計算之後的交易，無需刪除 `altcoin_trades.jsonl`
 
 ### 2026-05-15

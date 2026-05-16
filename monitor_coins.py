@@ -466,6 +466,103 @@ def analyze(exchange, symbol):
         'trend':     trend,
     }
 
+
+def analyze_major(exchange, symbol):
+    """
+    主流幣（BTC/ETH/SOL）趨勢跟隨分析。
+    與山寨幣的差異：不依賴大幅壓縮突破，改用趨勢指標組合。
+
+    信號 1 — EMA 排列：EMA9/21/50 全多頭 or 全空頭
+    信號 2 — MACD 動能：histogram 連續 3 根同向（走揚 or 走弱）
+    信號 3 — 成交量確認：近 2 根均量 ≥ 20 期均量 × 1.3（主流幣門檻低於山寨）
+    信號 4 — 資金費率：劇變 or 翻負（嘎空燃料，與山寨相同）
+    方向 — 多數決：bull 信號 > bear 信號 → 做多，反之做空，平手預設做多
+    """
+    df = fetch_1h(exchange, symbol)
+    if df is None:
+        return None
+
+    fr_now, fr_prev = fetch_funding(exchange, symbol)
+    c = df['close']
+
+    ema9  = c.ewm(span=9,  adjust=False).mean()
+    ema21 = c.ewm(span=21, adjust=False).mean()
+    ema50 = c.ewm(span=50, adjust=False).mean()
+
+    macd_fast  = c.ewm(span=12, adjust=False).mean()
+    macd_slow  = c.ewm(span=26, adjust=False).mean()
+    macd_hist  = (macd_fast - macd_slow) - (macd_fast - macd_slow).ewm(span=9, adjust=False).mean()
+
+    bull, bear, details = [], [], []
+
+    # 1. EMA 排列
+    if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1]:
+        bull.append('ema')
+        details.append("EMA9>21>50 多頭排列")
+    elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1]:
+        bear.append('ema')
+        details.append("EMA9<21<50 空頭排列")
+
+    # 2. MACD 動能（近 3 根 histogram 同向）
+    h3 = macd_hist.iloc[-3:].values
+    if h3[-1] > 0 and h3[0] <= h3[1] <= h3[2]:
+        bull.append('macd')
+        details.append(f"MACD 柱狀圖走揚 ({macd_hist.iloc[-1]:.5f})")
+    elif h3[-1] < 0 and h3[0] >= h3[1] >= h3[2]:
+        bear.append('macd')
+        details.append(f"MACD 柱狀圖走弱 ({macd_hist.iloc[-1]:.5f})")
+
+    # 3. 成交量確認（偏多趨勢 → bull，否則 bear）
+    vol_20  = df['volume'].iloc[-20:].mean()
+    vol_now = df['volume'].iloc[-2:].mean()
+    if vol_20 > 0 and vol_now / vol_20 >= 1.3:
+        if ema21.iloc[-1] >= ema50.iloc[-1]:
+            bull.append('vol')
+            details.append(f"成交量放大 {vol_now/vol_20:.1f}x（偏多趨勢）")
+        else:
+            bear.append('vol')
+            details.append(f"成交量放大 {vol_now/vol_20:.1f}x（偏空趨勢）")
+
+    # 4. 資金費率（同山寨幣邏輯）
+    if fr_now is not None and fr_prev is not None:
+        fr_change = abs(fr_now - fr_prev)
+        if fr_change >= 0.0002:
+            (bull if fr_now < 0 else bear).append('funding')
+            details.append(f"資金費率劇變 {fr_now*100:+.4f}%")
+        elif fr_prev >= -0.0001 and fr_now < -0.0001:
+            bull.append('funding')
+            details.append(f"資費轉負（嘎空燃料）{fr_now*100:+.4f}%")
+
+    # 多數決方向
+    if len(bull) > len(bear):
+        direction, aligned = 1, bull
+    elif len(bear) > len(bull):
+        direction, aligned = -1, bear
+    else:
+        direction, aligned = 1, bull  # 平手預設多
+
+    rsi   = float(_rsi(c, 14).iloc[-1])
+    trend = 1 if float(c.iloc[-1]) > float(ema50.iloc[-1]) else -1
+
+    return {
+        'symbol':    symbol,
+        'price':     float(c.iloc[-1]),
+        'signals':   aligned,
+        'details':   details,
+        'n':         len(aligned),
+        'direction': direction,
+        'rsi':       rsi,
+        'trend':     trend,
+    }
+
+
+def analyze_dispatch(exchange, symbol):
+    """主流幣用 analyze_major，山寨幣用 analyze。"""
+    if symbol in set(WATCH_ALWAYS):
+        return analyze_major(exchange, symbol)
+    return analyze(exchange, symbol)
+
+
 # ── 開倉 / 平倉 ───────────────────────────────────────────────────────────────
 def _enter_position(exchange, symbol, direction, amount):
     """嘗試限價單進場，LIMIT_ORDER_TIMEOUT 秒未成交改市價。回傳實際成交均價。"""
@@ -832,7 +929,7 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_
             continue
         if market_bias == 1 and lb_direction == -1:
             continue
-        result = analyze(exchange_pub, symbol)
+        result = analyze_dispatch(exchange_pub, symbol)
         if result is None:
             continue
         if lb_direction == 1 and result.get('rsi', 50) >= 80:
@@ -863,7 +960,7 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
     for symbol in watch_coins:
         if symbol in positions or len(positions) >= MAX_POSITIONS:
             continue
-        result = analyze(exchange_pub, symbol)
+        result = analyze_dispatch(exchange_pub, symbol)
         if result and result['n'] >= MIN_SIGNALS:
             d = result['direction']
             if d == 1 and result.get('rsi', 50) >= 80:
