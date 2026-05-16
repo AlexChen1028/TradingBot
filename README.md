@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-16 13:00 +08
+> Last updated: 2026-05-16 13:30 +08
 
 ---
 
@@ -11,10 +11,10 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
 | Service | Status | Note |
 |---|---|---|
-| `trading-bot` (BTC) | Paused | ML model underperforming, retraining in progress |
-| `eth-bot` (ETH) | Paused | ML model underperforming, retraining in progress |
-| `sol-bot` (SOL) | Paused | ML model underperforming, retraining in progress |
-| `coin-monitor` | **Running** | Altcoin strategy profitable, running solo; startup crash fixed |
+| `trading-bot` (BTC) | Paused | ML bot 暫置，BTC 改由 coin-monitor 以技術分析交易 |
+| `eth-bot` (ETH) | Paused | ML bot 暫置，ETH 改由 coin-monitor 以技術分析交易 |
+| `sol-bot` (SOL) | Paused | ML bot 暫置，SOL 改由 coin-monitor 以技術分析交易 |
+| `coin-monitor` | **Running** | 交易山寨幣 + BTC/ETH/SOL（技術分析信號），唯一運行中的機器人 |
 
 ---
 
@@ -405,6 +405,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - `monitor_coins.py` `get_btc_kol_gate()`：山寨幣機器人新增 BTC 結構門檻
   - BTC 假突破風險時，`scan()` 和 `scan_leaderboard()` 均跳過所有 LONG 進場
   - `analyze()` 信號 4 新增「資費轉負（嘎空燃料）」觸發條件（除了原有劇變外）
+- `monitor_coins.py` `WATCH_ALWAYS`：BTC/ETH/SOL 加入常駐掃描清單，三個 ML bot 暫置，改由 coin-monitor 以技術分析信號交易
 - `STATS_FROM` env var：Demo 重置後設定此日期，整點 P&L 和週報只計算之後的交易，無需刪除 `altcoin_trades.jsonl`
 
 ### 2026-05-15
