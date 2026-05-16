@@ -282,6 +282,58 @@ def detect_regime(df: pd.DataFrame) -> str:
         return 'neutral'
 
 
+# ── KOL overlay filters (加密龐克, notes/youtube-insights.md) ────────────────
+def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
+    """
+    EMA200-based overlay filters derived from 加密龐克 KOL analysis.
+
+    squeeze_fuel_up    : close near/above EMA200 + shorts over-leveraged (fr < 0) +
+                         RSI not overbought → high probability squeeze-up fuel
+    fake_breakout_risk : close testing EMA200 resistance + longs over-heated (fr > 0.0005) →
+                         washout / fake breakout risk, avoid LONG
+    right_side_long    : last 3 daily closes all above EMA200 → right-side high-confidence LONG
+    """
+    default = {
+        'ema200': None, 'ma200_ratio': 0.0,
+        'squeeze_fuel_up': False, 'fake_breakout_risk': False,
+        'right_side_long': False, 'fr_raw': 0.0,
+    }
+    try:
+        raw_daily  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, '1d', limit=210)
+        daily_c    = pd.DataFrame(raw_daily,
+                                  columns=['ts', 'open', 'high', 'low', 'close', 'volume'])['close']
+        ema200     = float(daily_c.ewm(span=200, adjust=False).mean().iloc[-1])
+        close      = float(df['close'].iloc[-1])
+        # data.py computes rsi as (100 - ...) / 100, so it's already 0..1
+        rsi        = float(df['rsi'].iloc[-1])
+        fr_raw     = float(df['funding_rate_raw'].fillna(0).iloc[-1])
+        ma200_ratio = close / ema200 - 1
+
+        squeeze_fuel_up = bool(
+            close > ema200 * 0.98 and   # close within 2% below EMA200 (or above)
+            fr_raw < -0.0001 and        # shorts over-leveraged → squeeze fuel building
+            rsi < 0.70                  # not overbought yet
+        )
+        fake_breakout_risk = bool(
+            fr_raw > 0.0005 and                       # longs over-heated
+            ema200 * 0.995 <= close <= ema200 * 1.01  # price testing EMA200 as resistance
+        )
+        right_side_long = bool(
+            all(daily_c.tail(3).values > ema200) and  # 3 consecutive daily closes above EMA200
+            close > ema200
+        )
+        return {
+            'ema200': ema200, 'ma200_ratio': ma200_ratio,
+            'squeeze_fuel_up': squeeze_fuel_up,
+            'fake_breakout_risk': fake_breakout_risk,
+            'right_side_long': right_side_long,
+            'fr_raw': fr_raw,
+        }
+    except Exception as e:
+        log.warning(f"compute_kol_filters failed: {e}")
+        return default
+
+
 # ── BTC/ETH 相關性保護 ────────────────────────────────────────────────────────
 def get_correlated_direction() -> int:
     """讀取相關幣種的倉位方向，BTC 讀 ETH，ETH 讀 BTC。"""
@@ -704,6 +756,26 @@ def main():
 
             log.info(f"Regime  : {regime}")
             explain_prediction(model, scaler, df, feature_cols, seq_len)
+
+            # KOL overlay filters
+            kol = compute_kol_filters(exchange_pub, df)
+            if kol['ema200']:
+                log.info(f"EMA200  : {kol['ema200']:,.2f}  ({kol['ma200_ratio']:+.2%})")
+            log.info(f"KOL     : squeeze_up={kol['squeeze_fuel_up']}  "
+                     f"fake_break={kol['fake_breakout_risk']}  "
+                     f"right_side={kol['right_side_long']}")
+
+            if direction == 1 and kol['fake_breakout_risk']:
+                log.info("KOL FILTER: 假突破風險 — 暫停 LONG（資費過熱 + 緊貼 EMA200）")
+                tg_send(f"⚠️ [{_COIN}] KOL: 假突破風險，LONG 暫停"
+                        f"（fr={kol['fr_raw']:.5f}，ma200_ratio={kol['ma200_ratio']:+.2%}）")
+                direction = 0
+
+            if direction == 1 and kol['squeeze_fuel_up']:
+                log.info("KOL FILTER: 軋空燃料偵測 — LONG 確認度提升")
+
+            if direction == 1 and kol['right_side_long']:
+                log.info("KOL FILTER: 右側交易確認 — 3 日均收盤站上 EMA200，高確定性 LONG")
 
             # 1a. 提前翻倉（震盪偵測）
             if check_preemptive_reversal(exchange, state, model_direction=direction):

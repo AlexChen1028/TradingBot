@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-16 00:05 +08
+> Last updated: 2026-05-16 12:00 +08
 
 ---
 
@@ -394,6 +394,11 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-05-16
+- `main.py` `compute_kol_filters()`：BTC/ETH/SOL 機器人新增 KOL overlay 過濾層（加密龐克分析落地）
+  - **假突破風險封鎖**：資費 > 0.05% 且收盤緊貼 EMA200（±0.5～1%）時，暫停 LONG 進場，TG 通知
+  - **軋空燃料偵測**：收盤近 EMA200 且資費為負 且 RSI < 70 時，記錄 LONG 確認度提升
+  - **右側交易確認**：近 3 日均收盤站上 EMA200 時，記錄高確定性 LONG 窗口
+  - 每 tick 記錄 EMA200 數值與三個旗標至 log，便於回測驗證
 - `STATS_FROM` env var：Demo 重置後設定此日期，整點 P&L 和週報只計算之後的交易，無需刪除 `altcoin_trades.jsonl`
 
 ### 2026-05-15
