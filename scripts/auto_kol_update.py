@@ -452,10 +452,13 @@ def main():
             print(f'  Processing: {video["title"][:60]}')
 
             transcript = get_transcript(vid_id, langs)
-            if not transcript:
-                print('    No transcript, skipping')
-                seen.add(vid_id)
+            if transcript is None:
+                print('    No transcript available, skipping')
+                seen.add(vid_id)  # won't retry — transcript genuinely unavailable
                 continue
+            if transcript == '':
+                print('    Empty transcript, will retry next run')
+                continue  # don't mark seen — may succeed later
 
             print(f'    Transcript: {len(transcript)} chars → analyzing...')
             analysis = analyze_with_gemini(video['title'], name, transcript, client)
