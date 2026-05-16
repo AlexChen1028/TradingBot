@@ -147,8 +147,9 @@ def get_transcript(video_id: str, langs: list) -> str | None:
         print('  youtube_transcript_api not installed, skipping transcript')
         return None
     try:
-        parts = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
-        raw = ' '.join(p['text'] for p in parts)
+        # v1.x: instantiate first, then call fetch()
+        fetched = YouTubeTranscriptApi().fetch(video_id, languages=langs)
+        raw = ' '.join(s.text for s in fetched)
         return raw[:MAX_TRANSCRIPT_CHARS]
     except (TranscriptsDisabled, NoTranscriptFound):
         return None
