@@ -1,7 +1,14 @@
-# YouTube KOL 觀點整理 — 加密龐克 (@crypto_punks)
+# YouTube KOL 觀點整理
+
+> **追蹤頻道**：加密龐克 (@crypto_punks)、BTC飛揚 (@BTCfeiyang)、BTC歐陽 (@BTC-ouyang)
+> **自動化**：`scripts/auto_kol_update.py` 每日 00:00 +08 執行，Gemini 2.0 Flash 分析，指標統計存於 `notes/kol_indicators.json`
+> **整理方向**：以「交易機器人開發者」角度，找出可落地到 `analyze_major()` 的技術指標與策略觀點。
+
+---
+
+# 加密龐克 (@crypto_punks)
 
 > **來源**：3 支最新影片（截至 2026-05-15），透過 NotebookLM 萃取重點。
-> **整理方向**：以「交易機器人開發者」角度，找出可落地到 `crypto-bot` 的策略觀點。
 
 ## 來源影片清單
 

@@ -15,7 +15,7 @@ Cron (VPS, runs daily at 8am Taipei):
   0 0 * * * cd ~/TradingBot && python3 scripts/auto_kol_update.py >> logs/kol_update.log 2>&1
 """
 
-import os, json, re, time, subprocess
+import os, sys, json, re, time, subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -39,20 +39,26 @@ except ImportError:
 #   3. Or use: https://www.tunetheweb.com/tools/find-youtube-channel-id/
 KOL_CHANNELS = [
     {
-        'handle':      '@crypto_punks',
-        'channel_id':  '',           # fill in once (see instructions above)
-        'name':        '加密龐克',
-        'langs':       ['zh-TW', 'zh-Hant', 'zh', 'zh-Hans', 'en'],
+        'handle':     '@crypto_punks',
+        'channel_id': '',
+        'name':       '加密龐克',
+        'langs':      ['zh-TW', 'zh-Hant', 'zh', 'zh-Hans', 'en'],
     },
-    # Add more KOLs here:
-    # {
-    #     'handle':     '@another_kol',
-    #     'channel_id': 'UCxxxxxxxxxxxxxxxxxxxxxxxx',
-    #     'name':       'KOL Name',
-    #     'langs':      ['zh-TW', 'en'],
-    # },
+    {
+        'handle':     '@BTCfeiyang',
+        'channel_id': '',
+        'name':       'BTC飛揚',
+        'langs':      ['zh-TW', 'zh-Hant', 'zh', 'zh-Hans', 'en'],
+    },
+    {
+        'handle':     '@BTC-ouyang',
+        'channel_id': '',
+        'name':       'BTC歐陽',
+        'langs':      ['zh-TW', 'zh-Hant', 'zh', 'zh-Hans', 'en'],
+    },
 ]
 
+# --historical flag sets this to 8760 (1 year) to process all RSS videos
 LOOKBACK_HOURS       = 30           # look for videos published in last N hours
 MAX_TRANSCRIPT_CHARS = 10000        # truncate transcripts before sending to Claude
 AUTO_APPLY_MIN_CONF  = 'high'       # only auto-apply parameter changes at this confidence
@@ -160,7 +166,7 @@ def get_transcript(video_id: str, langs: list) -> str | None:
 # ── Claude analysis ───────────────────────────────────────────────────────────
 
 ANALYSIS_PROMPT = """你是加密貨幣交易機器人（crypto-bot）的策略分析師。
-你正在分析 KOL 的市場觀點影片逐字稿，目的是提取能應用到 monitor_coins.py 的具體建議。
+你正在分析 KOL 的市場觀點影片（或逐字稿），目的是提取能應用到 monitor_coins.py 的具體建議。
 
 monitor_coins.py 的關鍵參數（供你參考）：
 - MIN_SIGNALS = 2           # 觸發進場的最低信號數
@@ -212,21 +218,11 @@ KOL 頻道：{channel_name}
 - market_bias 根據 KOL 對未來 1-7 天的整體看法判斷"""
 
 
-def analyze_with_gemini(title: str, channel_name: str, transcript: str, client) -> dict:
-    prompt = ANALYSIS_PROMPT.format(
-        channel_name=channel_name,
-        title=title,
-        transcript=transcript,
-    )
-    text = ''
+def _parse_gemini_json(text: str) -> dict | None:
+    """Strip markdown fences and parse JSON from Gemini response."""
+    text = re.sub(r'^```(?:json)?\s*', '', text.strip())
+    text = re.sub(r'\s*```$', '', text)
     try:
-        resp = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-        )
-        text = resp.text.strip()
-        text = re.sub(r'^```(?:json)?\s*', '', text)
-        text = re.sub(r'\s*```$', '', text)
         return json.loads(text)
     except json.JSONDecodeError:
         m = re.search(r'\{.*\}', text, re.DOTALL)
@@ -235,17 +231,55 @@ def analyze_with_gemini(title: str, channel_name: str, transcript: str, client) 
                 return json.loads(m.group())
             except Exception:
                 pass
+    return None
+
+_ANALYSIS_DEFAULT = {
+    'market_bias': 'neutral', 'key_insights': [], 'ta_indicators': [],
+    'parameter_changes': [], 'logic_suggestions': [],
+    'tg_summary': '分析失敗，請查看 notes/youtube-insights.md',
+}
+
+
+def analyze_video_direct(video: dict, channel_name: str, client) -> dict:
+    """
+    Analyze YouTube video directly via Gemini's video understanding.
+    Works even when YouTube blocks transcript API requests from cloud IPs.
+    """
+    from google.genai import types
+    video_url = f'https://www.youtube.com/watch?v={video["id"]}'
+    prompt = ANALYSIS_PROMPT.format(
+        channel_name=channel_name,
+        title=video['title'],
+        transcript='[Gemini 直接觀看影片，無需逐字稿]',
+    )
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[
+                types.Part.from_uri(file_uri=video_url, mime_type='video/*'),
+                types.Part(text=prompt),
+            ],
+        )
+        result = _parse_gemini_json(response.text)
+        if result:
+            return result
+    except Exception as e:
+        print(f'  Gemini direct video error: {e}')
+    return dict(_ANALYSIS_DEFAULT)
+
+
+def analyze_with_gemini(title: str, channel_name: str, transcript: str, client) -> dict:
+    prompt = ANALYSIS_PROMPT.format(
+        channel_name=channel_name, title=title, transcript=transcript,
+    )
+    try:
+        resp = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+        result = _parse_gemini_json(resp.text)
+        if result:
+            return result
     except Exception as e:
         print(f'  Gemini API error: {e}')
-
-    return {
-        'market_bias': 'neutral',
-        'key_insights': [],
-        'ta_indicators': [],
-        'parameter_changes': [],
-        'logic_suggestions': [],
-        'tg_summary': '分析失敗，請查看 notes/youtube-insights.md',
-    }
+    return dict(_ANALYSIS_DEFAULT)
 
 # ── Notes update ──────────────────────────────────────────────────────────────
 
@@ -406,7 +440,10 @@ def git_commit_push(summary: str) -> bool:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f'[{now8().strftime("%Y-%m-%d %H:%M +08")}] KOL auto-update started')
+    historical = '--historical' in sys.argv   # scan all RSS videos regardless of age
+    lookback   = 8760 if historical else LOOKBACK_HOURS
+    print(f'[{now8().strftime("%Y-%m-%d %H:%M +08")}] KOL auto-update started'
+          + (' [HISTORICAL MODE]' if historical else ''))
 
     if not GEMINI_KEY:
         print('ERROR: GEMINI_API_KEY not set in environment')
@@ -419,7 +456,9 @@ def main():
 
     client = _genai.Client(api_key=GEMINI_KEY)
     seen   = load_seen()
-    since  = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+    if historical:
+        seen = set()   # re-process everything in historical mode
+    since  = datetime.now(timezone.utc) - timedelta(hours=lookback)
 
     all_processed     = []
     all_applied_changes = []
@@ -451,17 +490,13 @@ def main():
 
             print(f'  Processing: {video["title"][:60]}')
 
-            transcript = get_transcript(vid_id, langs)
-            if transcript is None:
-                print('    No transcript available, skipping')
-                seen.add(vid_id)  # won't retry — transcript genuinely unavailable
-                continue
-            if transcript == '':
-                print('    Empty transcript, will retry next run')
-                continue  # don't mark seen — may succeed later
-
-            print(f'    Transcript: {len(transcript)} chars → analyzing...')
-            analysis = analyze_with_gemini(video['title'], name, transcript, client)
+            transcript = get_transcript(vid_id, langs)   # None if blocked/unavailable
+            if transcript:
+                print(f'    Transcript: {len(transcript)} chars → text analysis...')
+                analysis = analyze_with_gemini(video['title'], name, transcript, client)
+            else:
+                print(f'    No transcript — Gemini direct video analysis...')
+                analysis = analyze_video_direct(video, name, client)
 
             append_to_notes(video, name, analysis)
             update_kol_indicator_profile(name, analysis.get('ta_indicators', []))
