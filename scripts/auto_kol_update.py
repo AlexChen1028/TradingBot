@@ -249,7 +249,7 @@ def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | 
     """Call Gemini text API with automatic retry on 429 rate limit."""
     for attempt in range(max_retries):
         try:
-            resp = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+            resp = client.models.generate_content(model='gemini-2.0-flash-lite', contents=prompt)
             return resp.text
         except Exception as e:
             err = str(e)
