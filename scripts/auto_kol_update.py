@@ -60,6 +60,7 @@ KOL_CHANNELS = [
 
 # --historical flag sets this to 8760 (1 year) to process all RSS videos
 LOOKBACK_HOURS       = 30           # look for videos published in last N hours
+HISTORICAL_MAX_PER_KOL = 5         # --historical mode: max videos per KOL
 MAX_TRANSCRIPT_CHARS = 10000        # truncate transcripts before sending to Claude
 AUTO_APPLY_MIN_CONF  = 'high'       # only auto-apply parameter changes at this confidence
 
@@ -496,7 +497,9 @@ def main():
 
         print(f'\n[{name}] Fetching RSS...')
         videos = get_latest_videos(cid, since)
-        print(f'  {len(videos)} new video(s) in last {LOOKBACK_HOURS}h')
+        if historical:
+            videos = videos[:HISTORICAL_MAX_PER_KOL]
+        print(f'  {len(videos)} video(s) to process')
 
         for video in videos:
             vid_id = video['id']
