@@ -5,7 +5,7 @@ scripts/auto_kol_update.py
 Daily KOL analysis pipeline:
   1. Fetch latest YouTube videos (RSS) from configured channels
   2. Extract transcripts (youtube_transcript_api)
-  3. Analyze with Claude API → insights + parameter change suggestions
+  3. Analyze with Gemini API (free tier) → insights + parameter change suggestions
   4. Append to notes/youtube-insights.md
   5. Apply high-confidence parameter changes to monitor_coins.py
   6. git commit + push
@@ -28,9 +28,9 @@ except ImportError:
     YouTubeTranscriptApi = None
 
 try:
-    import anthropic as _anthropic
+    import google.generativeai as _genai
 except ImportError:
-    _anthropic = None
+    _genai = None
 
 # ── KOL Channel Config ────────────────────────────────────────────────────────
 # Add more channels here. channel_id can be found:
@@ -65,7 +65,7 @@ SEEN_FILE    = REPO_ROOT / 'notes' / '.kol_seen.json'
 LOG_DIR      = REPO_ROOT / 'logs'
 
 # ── Env ───────────────────────────────────────────────────────────────────────
-ANTHROPIC_KEY    = os.getenv('ANTHROPIC_API_KEY', '')
+GEMINI_KEY       = os.getenv('GEMINI_API_KEY', '')
 MONITOR_TOKEN    = os.getenv('MONITOR_TOKEN', '')
 MONITOR_CHAT_IDS = [i.strip() for i in os.getenv('MONITOR_CHAT_ID', '').split(',') if i.strip()]
 
@@ -211,25 +211,20 @@ KOL 頻道：{channel_name}
 - market_bias 根據 KOL 對未來 1-7 天的整體看法判斷"""
 
 
-def analyze_with_claude(title: str, channel_name: str, transcript: str, client) -> dict:
+def analyze_with_gemini(title: str, channel_name: str, transcript: str, model) -> dict:
     prompt = ANALYSIS_PROMPT.format(
         channel_name=channel_name,
         title=title,
         transcript=transcript,
     )
+    text = ''
     try:
-        resp = client.messages.create(
-            model='claude-sonnet-4-6',
-            max_tokens=1200,
-            messages=[{'role': 'user', 'content': prompt}],
-        )
-        text = resp.content[0].text.strip()
-        # strip markdown code fences if present
+        resp = model.generate_content(prompt)
+        text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
         return json.loads(text)
     except json.JSONDecodeError:
-        # try to extract JSON object
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
             try:
@@ -237,11 +232,12 @@ def analyze_with_claude(title: str, channel_name: str, transcript: str, client) 
             except Exception:
                 pass
     except Exception as e:
-        print(f'  Claude API error: {e}')
+        print(f'  Gemini API error: {e}')
 
     return {
         'market_bias': 'neutral',
         'key_insights': [],
+        'ta_indicators': [],
         'parameter_changes': [],
         'logic_suggestions': [],
         'tg_summary': '分析失敗，請查看 notes/youtube-insights.md',
@@ -408,16 +404,17 @@ def git_commit_push(summary: str) -> bool:
 def main():
     print(f'[{now8().strftime("%Y-%m-%d %H:%M +08")}] KOL auto-update started')
 
-    if not ANTHROPIC_KEY:
-        print('ERROR: ANTHROPIC_API_KEY not set in environment')
-        tg('⚠️ KOL 自動分析失敗：缺少 ANTHROPIC_API_KEY')
+    if not GEMINI_KEY:
+        print('ERROR: GEMINI_API_KEY not set in environment')
+        tg('⚠️ KOL 自動分析失敗：缺少 GEMINI_API_KEY')
         return
 
-    if _anthropic is None:
-        print('ERROR: anthropic package not installed. Run: pip install anthropic')
+    if _genai is None:
+        print('ERROR: google-generativeai not installed. Run: pip3 install google-generativeai --break-system-packages')
         return
 
-    client = _anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+    _genai.configure(api_key=GEMINI_KEY)
+    client = _genai.GenerativeModel('gemini-1.5-flash')
     seen   = load_seen()
     since  = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
 
@@ -458,7 +455,7 @@ def main():
                 continue
 
             print(f'    Transcript: {len(transcript)} chars → analyzing...')
-            analysis = analyze_with_claude(video['title'], name, transcript, client)
+            analysis = analyze_with_gemini(video['title'], name, transcript, client)
 
             append_to_notes(video, name, analysis)
             update_kol_indicator_profile(name, analysis.get('ta_indicators', []))

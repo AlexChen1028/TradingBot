@@ -9,7 +9,7 @@ yfinance
 feedparser
 vaderSentiment
 youtube-transcript-api
-anthropic
+google-generativeai
 # PyTorch: install with the correct CUDA version from https://pytorch.org/get-started/locally/
 # CPU-only fallback (used in Docker — override with GPU build if needed):
 torch
