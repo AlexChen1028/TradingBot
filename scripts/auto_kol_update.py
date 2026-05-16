@@ -127,7 +127,7 @@ def save_seen(seen: set):
 # ── YouTube data ──────────────────────────────────────────────────────────────
 
 def get_latest_videos(channel_id: str, since: datetime) -> list[dict]:
-    """Fetch recent videos via YouTube RSS. Returns list of {id, title, url, published}."""
+    """Fetch recent videos via YouTube RSS. Returns list of {id, title, url, published, description}."""
     url = f'https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}'
     feed = feedparser.parse(url)
     results = []
@@ -140,11 +140,16 @@ def get_latest_videos(channel_id: str, since: datetime) -> list[dict]:
             pub_dt = datetime(*pub[:6], tzinfo=timezone.utc)
             if pub_dt < since:
                 continue
+        # description from RSS (usually first ~500 chars of video description)
+        desc = e.get('summary', '') or e.get('description', '')
+        if isinstance(desc, str):
+            desc = re.sub(r'<[^>]+>', '', desc).strip()[:500]
         results.append({
-            'id':        vid_id,
-            'title':     e.get('title', ''),
-            'url':       e.get('link', f'https://youtu.be/{vid_id}'),
-            'published': pub,
+            'id':          vid_id,
+            'title':       e.get('title', ''),
+            'url':         e.get('link', f'https://youtu.be/{vid_id}'),
+            'published':   pub,
+            'description': desc,
         })
     return results
 
@@ -240,31 +245,41 @@ _ANALYSIS_DEFAULT = {
 }
 
 
+def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | None:
+    """Call Gemini text API with automatic retry on 429 rate limit."""
+    for attempt in range(max_retries):
+        try:
+            resp = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+            return resp.text
+        except Exception as e:
+            err = str(e)
+            if '429' in err or 'RESOURCE_EXHAUSTED' in err:
+                m = re.search(r'retryDelay.*?(\d+)s', err)
+                wait = int(m.group(1)) + 5 if m else 65
+                print(f'  Rate limited — waiting {wait}s (attempt {attempt+1}/{max_retries})...')
+                time.sleep(wait)
+            else:
+                print(f'  Gemini error: {e}')
+                return None
+    return None
+
+
 def analyze_video_direct(video: dict, channel_name: str, client) -> dict:
     """
-    Analyze YouTube video directly via Gemini's video understanding.
-    Works even when YouTube blocks transcript API requests from cloud IPs.
+    Analyze video using title + RSS description (text only).
+    Avoids direct video URL which exhausts free-tier token quota.
     """
-    from google.genai import types
-    video_url = f'https://www.youtube.com/watch?v={video["id"]}'
+    context = f"標題：{video['title']}\n描述：{video.get('description', '（無描述）')}"
     prompt = ANALYSIS_PROMPT.format(
         channel_name=channel_name,
         title=video['title'],
-        transcript='[Gemini 直接觀看影片，無需逐字稿]',
+        transcript=context,
     )
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[
-                types.Part.from_uri(file_uri=video_url, mime_type='video/*'),
-                types.Part(text=prompt),
-            ],
-        )
-        result = _parse_gemini_json(response.text)
+    text = _call_gemini_with_retry(client, prompt)
+    if text:
+        result = _parse_gemini_json(text)
         if result:
             return result
-    except Exception as e:
-        print(f'  Gemini direct video error: {e}')
     return dict(_ANALYSIS_DEFAULT)
 
 
@@ -272,13 +287,11 @@ def analyze_with_gemini(title: str, channel_name: str, transcript: str, client) 
     prompt = ANALYSIS_PROMPT.format(
         channel_name=channel_name, title=title, transcript=transcript,
     )
-    try:
-        resp = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
-        result = _parse_gemini_json(resp.text)
+    text = _call_gemini_with_retry(client, prompt)
+    if text:
+        result = _parse_gemini_json(text)
         if result:
             return result
-    except Exception as e:
-        print(f'  Gemini API error: {e}')
     return dict(_ANALYSIS_DEFAULT)
 
 # ── Notes update ──────────────────────────────────────────────────────────────
@@ -429,7 +442,9 @@ def git_commit_push(summary: str) -> bool:
             f'feat(kol): daily KOL analysis — {summary}\n\n'
             f'Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>'
         )
-        subprocess.run(['git', 'commit', '-m', msg], cwd=REPO_ROOT, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', msg,
+                        '--author', 'KOL Bot <kol-bot@tradingbot>'],
+                       cwd=REPO_ROOT, check=True, capture_output=True)
         subprocess.run(['git', 'push'], cwd=REPO_ROOT, check=True, capture_output=True)
         return True
     except subprocess.CalledProcessError as e:
@@ -495,11 +510,19 @@ def main():
                 print(f'    Transcript: {len(transcript)} chars → text analysis...')
                 analysis = analyze_with_gemini(video['title'], name, transcript, client)
             else:
-                print(f'    No transcript — Gemini direct video analysis...')
+                print(f'    No transcript — title+description analysis...')
                 analysis = analyze_video_direct(video, name, client)
+
+            # skip empty results (Gemini failed)
+            if not analysis.get('key_insights') and not analysis.get('ta_indicators'):
+                print('    Analysis empty, skipping notes update')
+                seen.add(vid_id)
+                time.sleep(4)
+                continue
 
             append_to_notes(video, name, analysis)
             update_kol_indicator_profile(name, analysis.get('ta_indicators', []))
+            time.sleep(4)   # stay within free-tier RPM limit
             applied = apply_parameter_changes(analysis.get('parameter_changes', []))
             all_applied_changes.extend(applied)
 
