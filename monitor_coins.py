@@ -422,12 +422,15 @@ def analyze(exchange, symbol):
         signals.append('breakout')
         details.append(f"距14日高點僅 {gap_pct:.1%}")
 
-    # 4. 資金費率劇變
+    # 4. 資金費率信號：劇變 或 由正轉負（嘎空燃料）
     if fr_now is not None and fr_prev is not None:
         fr_change = abs(fr_now - fr_prev)
         if fr_change >= 0.0002:
             signals.append('funding')
             details.append(f"資金費率劇變 {fr_now*100:+.4f}%")
+        elif fr_prev >= -0.0001 and fr_now < -0.0001:
+            signals.append('funding')
+            details.append(f"資費轉負（嘎空燃料）{fr_now*100:+.4f}%")
 
     # 判斷方向
     ret_1h = (df['close'].iloc[-1] - df['close'].iloc[-2]) / df['close'].iloc[-2]
@@ -727,7 +730,36 @@ def send_leaderboard(exchange, top_n=10):
     return candidates
 
 # ── 市場大環境過濾 ────────────────────────────────────────────────────────────
-_bias_cache = {'bias': 0, 'reason': '初始化', 'ts': 0}
+_bias_cache   = {'bias': 0, 'reason': '初始化', 'ts': 0}
+_btc_kol_cache = {'fake_breakout': False, 'squeeze_fuel': False, 'ema200': 0, 'fr_raw': 0, 'ts': 0}
+
+def get_btc_kol_gate(exchange_pub):
+    """
+    每小時更新 BTC EMA200 狀態，作為山寨幣開倉的市場結構門檻。
+    fake_breakout: BTC 資費過熱 + 緊貼 EMA200 → 全市場 LONG 降溫（避免假突破進場）
+    squeeze_fuel:  BTC 資費轉負 + 接近 EMA200  → 市場嘎空動能建立，LONG 有利
+    """
+    global _btc_kol_cache
+    if time.time() - _btc_kol_cache['ts'] < 3600:
+        return _btc_kol_cache
+    try:
+        raw    = exchange_pub.fetch_ohlcv('BTC/USDT', '1d', limit=210)
+        daily_c = pd.DataFrame(raw, columns=['ts','open','high','low','close','volume'])['close']
+        ema200  = float(daily_c.ewm(span=200, adjust=False).mean().iloc[-1])
+        fr_data = exchange_pub.fetch_funding_rate('BTC/USDT:USDT')
+        fr_raw  = float(fr_data.get('fundingRate', 0) or 0)
+        btc_px  = float(exchange_pub.fetch_ticker('BTC/USDT')['last'])
+        fake_breakout = bool(fr_raw > 0.0005 and ema200 * 0.995 <= btc_px <= ema200 * 1.01)
+        squeeze_fuel  = bool(btc_px > ema200 * 0.98 and fr_raw < -0.0001)
+        _btc_kol_cache.update({
+            'fake_breakout': fake_breakout, 'squeeze_fuel': squeeze_fuel,
+            'ema200': ema200, 'fr_raw': fr_raw, 'ts': time.time(),
+        })
+        label = '⚠️ 假突破' if fake_breakout else ('🔥 嘎空燃料' if squeeze_fuel else '—')
+        print(f"  📡 BTC KOL：EMA200={ema200:,.0f}  fr={fr_raw:.5f}  {label}")
+    except Exception as e:
+        print(f"  BTC KOL gate error: {e}")
+    return _btc_kol_cache
 
 def get_market_bias(exchange):
     """
@@ -804,6 +836,9 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_
             continue  # RSI 超賣，跳過做空
         if lb_direction != result.get('trend', lb_direction):
             continue  # 方向不符 EMA50 趨勢
+        if lb_direction == 1 and get_btc_kol_gate(exchange_pub).get('fake_breakout'):
+            print(f"  ⚠️ KOL: BTC 假突破風險，跳過 {symbol.split('/')[0]} 漲幅榜做多")
+            continue
         if result['n'] >= MIN_LEADERBOARD_SIGNALS:
             sym_name = symbol.split('/')[0]
             dir_str  = '做多' if lb_direction == 1 else '做空'
@@ -836,6 +871,9 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
                 continue  # 大環境偏空，跳過做多
             if market_bias == 1 and d == -1:
                 continue  # 大環境偏多，跳過做空
+            if d == 1 and get_btc_kol_gate(exchange_pub).get('fake_breakout'):
+                print(f"  ⚠️ KOL: BTC 假突破風險，跳過 {symbol.split('/')[0]} 做多")
+                continue
             print(f"  🔔 {symbol.split('/')[0]} {result['n']} 個信號  RSI {result['rsi']:.0f}  → 開倉")
             open_pos(exchange_priv, symbol, d, positions, result['n'])
         time.sleep(0.15)

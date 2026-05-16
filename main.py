@@ -286,17 +286,21 @@ def detect_regime(df: pd.DataFrame) -> str:
 def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
     """
     EMA200-based overlay filters derived from 加密龐克 KOL analysis.
+    See notes/youtube-insights.md §C and §D for full signal logic.
 
-    squeeze_fuel_up    : close near/above EMA200 + shorts over-leveraged (fr < 0) +
-                         RSI not overbought → high probability squeeze-up fuel
-    fake_breakout_risk : close testing EMA200 resistance + longs over-heated (fr > 0.0005) →
-                         washout / fake breakout risk, avoid LONG
-    right_side_long    : last 3 daily closes all above EMA200 → right-side high-confidence LONG
+    squeeze_fuel_up    : near EMA200 + shorts over-leveraged + RSI < 70 → 嘎空燃料
+    fake_breakout_risk : testing EMA200 resistance + longs over-heated → 假突破洗盤
+    right_side_long    : 3 daily closes above EMA200 → 右側交易高確定性窗口
+    fr_flip_negative   : FR crossed from neutral/positive to negative → 軋空動能訊號
+    near_support       : price below EMA200 × 1.02 → SHORT risky (in support zone)
+    spy_qqq_declining  : US stocks down > 0.5% → 美股回調釋放流動性，留意多頭催化
     """
     default = {
         'ema200': None, 'ma200_ratio': 0.0,
         'squeeze_fuel_up': False, 'fake_breakout_risk': False,
-        'right_side_long': False, 'fr_raw': 0.0,
+        'right_side_long': False, 'fr_flip_negative': False,
+        'near_support': False, 'spy_qqq_declining': False,
+        'fr_raw': 0.0,
     }
     try:
         raw_daily  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, '1d', limit=210)
@@ -306,13 +310,19 @@ def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
         close      = float(df['close'].iloc[-1])
         # data.py computes rsi as (100 - ...) / 100, so it's already 0..1
         rsi        = float(df['rsi'].iloc[-1])
-        fr_raw     = float(df['funding_rate_raw'].fillna(0).iloc[-1])
+        fr_series  = df['funding_rate_raw'].fillna(0)
+        fr_raw     = float(fr_series.iloc[-1])
+        fr_prev    = float(fr_series.iloc[-2]) if len(fr_series) >= 2 else fr_raw
         ma200_ratio = close / ema200 - 1
 
+        # SPY/QQQ daily returns are forward-filled to hourly in data.py
+        spy_ret = float(df['spy_ret'].fillna(0).iloc[-1])
+        qqq_ret = float(df['qqq_ret'].fillna(0).iloc[-1])
+
         squeeze_fuel_up = bool(
-            close > ema200 * 0.98 and   # close within 2% below EMA200 (or above)
-            fr_raw < -0.0001 and        # shorts over-leveraged → squeeze fuel building
-            rsi < 0.70                  # not overbought yet
+            close > ema200 * 0.98 and   # within 2% below EMA200 (or above)
+            fr_raw < -0.0001 and        # shorts over-leveraged → squeeze fuel
+            rsi < 0.70
         )
         fake_breakout_risk = bool(
             fr_raw > 0.0005 and                       # longs over-heated
@@ -322,11 +332,20 @@ def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
             all(daily_c.tail(3).values > ema200) and  # 3 consecutive daily closes above EMA200
             close > ema200
         )
+        fr_flip_negative = bool(
+            fr_raw < -0.0001 and fr_prev >= -0.0001   # FR just crossed to negative
+        )
+        near_support = bool(close < ema200 * 1.02)    # at or below EMA200 — support zone
+        spy_qqq_declining = bool(spy_ret < -0.005 or qqq_ret < -0.005)
+
         return {
             'ema200': ema200, 'ma200_ratio': ma200_ratio,
             'squeeze_fuel_up': squeeze_fuel_up,
             'fake_breakout_risk': fake_breakout_risk,
             'right_side_long': right_side_long,
+            'fr_flip_negative': fr_flip_negative,
+            'near_support': near_support,
+            'spy_qqq_declining': spy_qqq_declining,
             'fr_raw': fr_raw,
         }
     except Exception as e:
@@ -763,19 +782,52 @@ def main():
                 log.info(f"EMA200  : {kol['ema200']:,.2f}  ({kol['ma200_ratio']:+.2%})")
             log.info(f"KOL     : squeeze_up={kol['squeeze_fuel_up']}  "
                      f"fake_break={kol['fake_breakout_risk']}  "
-                     f"right_side={kol['right_side_long']}")
+                     f"right_side={kol['right_side_long']}  "
+                     f"fr_flip_neg={kol['fr_flip_negative']}  "
+                     f"near_sup={kol['near_support']}  "
+                     f"spyqqq_down={kol['spy_qqq_declining']}")
 
+            # ── KOL direction filters ──────────────────────────────────────────
+            # 假突破風險：資費過熱 + 緊貼 EMA200 → 暫停 LONG
             if direction == 1 and kol['fake_breakout_risk']:
                 log.info("KOL FILTER: 假突破風險 — 暫停 LONG（資費過熱 + 緊貼 EMA200）")
                 tg_send(f"⚠️ [{_COIN}] KOL: 假突破風險，LONG 暫停"
-                        f"（fr={kol['fr_raw']:.5f}，ma200_ratio={kol['ma200_ratio']:+.2%}）")
+                        f"（fr={kol['fr_raw']:.5f}，ma200={kol['ma200_ratio']:+.2%}）")
                 direction = 0
 
-            if direction == 1 and kol['squeeze_fuel_up']:
-                log.info("KOL FILTER: 軋空燃料偵測 — LONG 確認度提升")
+            # 靠近支撐區做空風險：price ≤ EMA200×1.02 且資費非正 → 暫停 SHORT
+            if direction == -1 and kol['near_support'] and kol['fr_raw'] <= 0:
+                log.info("KOL FILTER: 靠近支撐區且資費非正 — 暫停 SHORT（空在支撐上風險）")
+                direction = 0
+
+            # 資費翻負（嘎空動能訊號）→ TG 通知
+            if kol['fr_flip_negative']:
+                tg_send(f"📡 [{_COIN}] KOL: 資費由正轉負（fr={kol['fr_raw']:.5f}）"
+                        f" — 嘎空動能訊號，留意 EMA200 突破機會")
+
+            # 美股回調 → 記錄加密流動性釋放訊號
+            if kol['spy_qqq_declining']:
+                log.info("KOL NOTE: 美股下跌 > 0.5%，留意加密市場流動性釋放（潛在多頭催化劑）")
+
+            # ── KOL 開倉 regime 調整 ─────────────────────────────────────────
+            # entry_regime 用於 open_position 倉位計算，不修改原始 regime（保留 log 正確性）
+            entry_regime = regime
+
+            if direction == 1:
+                if kol['squeeze_fuel_up']:
+                    # 軋空燃料：即使震盪市也維持正常倉位，機率偏向 squeeze
+                    if entry_regime == 'ranging':
+                        entry_regime = 'neutral'
+                        log.info("KOL FILTER: 軋空燃料 — 覆蓋震盪市縮倉，維持正常倉位")
+                    else:
+                        log.info("KOL FILTER: 軋空燃料偵測 — LONG 確認度高")
+                elif kol['fr_raw'] > 0.0005:
+                    # 資費過熱（但不在 EMA200 壓力區，fake_breakout 已處理那種情況）→ 縮倉 50%
+                    entry_regime = 'ranging'
+                    log.info("KOL FILTER: 資費過熱（非壓力區），倉位縮至 50%")
 
             if direction == 1 and kol['right_side_long']:
-                log.info("KOL FILTER: 右側交易確認 — 3 日均收盤站上 EMA200，高確定性 LONG")
+                log.info("KOL FILTER: 右側交易確認 — 3 日均收盤站上 EMA200，高確定性 LONG 窗口")
 
             # 1a. 提前翻倉（震盪偵測）
             if check_preemptive_reversal(exchange, state, model_direction=direction):
@@ -783,7 +835,7 @@ def main():
                 save_state(state)
                 if direction != 0:
                     balance = get_balance(exchange)
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=entry_regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
@@ -803,7 +855,7 @@ def main():
                 if direction != 0:
                     balance = get_balance(exchange)
                     log.info(f"SL/TP triggered — immediately re-entering {dir_label}")
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=entry_regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
@@ -836,7 +888,7 @@ def main():
                     time.sleep(1)
 
                 if direction != 0:
-                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=regime)
+                    amt, price, sl_id, tp_id = open_position(exchange, direction, balance, regime=entry_regime)
                     state.update({
                         'direction':   direction,
                         'amount_coin': amt,
