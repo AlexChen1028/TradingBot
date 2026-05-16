@@ -533,6 +533,30 @@ def analyze_major(exchange, symbol):
             bull.append('funding')
             details.append(f"資費轉負（嘎空燃料）{fr_now*100:+.4f}%")
 
+    # 5. RSI 動能：RSI 方向 × 50 線位置（KOL 常用：50 以上看多動能）
+    rsi_series = _rsi(c, 14)
+    rsi_now  = float(rsi_series.iloc[-1])
+    rsi_prev = float(rsi_series.iloc[-4])   # 4 小時前
+    if rsi_now > 50 and rsi_now > rsi_prev:
+        bull.append('rsi_mom')
+        details.append(f"RSI {rsi_now:.0f} 站上 50 且上升")
+    elif rsi_now < 50 and rsi_now < rsi_prev:
+        bear.append('rsi_mom')
+        details.append(f"RSI {rsi_now:.0f} 跌破 50 且下降")
+
+    # 6. 布林帶位置：突破上軌（多頭動能）/ 跌破下軌（空頭動能）
+    bm  = c.rolling(20).mean()
+    bstd = c.rolling(20).std()
+    bb_upper = bm + 2 * bstd
+    bb_lower = bm - 2 * bstd
+    bb_pct   = float((c.iloc[-1] - bb_lower.iloc[-1]) / (bb_upper.iloc[-1] - bb_lower.iloc[-1] + 1e-9))
+    if bb_pct > 0.85:
+        bull.append('bb')
+        details.append(f"價格突破布林上軌（bb_pct={bb_pct:.2f}）")
+    elif bb_pct < 0.15:
+        bear.append('bb')
+        details.append(f"價格跌破布林下軌（bb_pct={bb_pct:.2f}）")
+
     # 多數決方向
     if len(bull) > len(bear):
         direction, aligned = 1, bull

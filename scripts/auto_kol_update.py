@@ -179,6 +179,13 @@ KOL 頻道：{channel_name}
 {{
   "market_bias": "bullish" | "bearish" | "neutral",
   "key_insights": ["最多 5 條，具體影響交易的觀點"],
+  "ta_indicators": [
+    {{
+      "name": "EMA200",
+      "usage": "KOL 如何使用這個指標的一句話說明",
+      "signal_type": "trend" | "momentum" | "volatility" | "volume" | "sentiment"
+    }}
+  ],
   "parameter_changes": [
     {{
       "variable": "STOP_LOSS_PCT",
@@ -197,6 +204,7 @@ KOL 頻道：{channel_name}
 }}
 
 規則：
+- ta_indicators：列出影片中 KOL 有明確提到或用來判斷行情的所有技術指標（EMA、RSI、MACD、布林帶、資費、成交量等）
 - parameter_changes 只填有充分影片依據的建議
 - confidence=high 意味著你確信這個改動在當前市況合理
 - 沒有建議時用空陣列
@@ -276,6 +284,60 @@ def append_to_notes(video: dict, channel_name: str, analysis: dict):
     NOTES_FILE.parent.mkdir(exist_ok=True)
     with open(NOTES_FILE, 'a', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
+
+
+# ── KOL indicator profile ─────────────────────────────────────────────────────
+INDICATORS_FILE = REPO_ROOT / 'notes' / 'kol_indicators.json'
+
+def update_kol_indicator_profile(channel_name: str, ta_indicators: list):
+    """
+    累計每個 KOL 提到的技術指標次數，存到 notes/kol_indicators.json。
+    格式：{ "加密龐克": { "EMA200": 3, "RSI": 2, ... }, ... }
+    """
+    if not ta_indicators:
+        return
+
+    profile = {}
+    if INDICATORS_FILE.exists():
+        try:
+            profile = json.loads(INDICATORS_FILE.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+
+    kol_counts = profile.setdefault(channel_name, {})
+    for ind in ta_indicators:
+        name = ind.get('name', '').strip()
+        if name:
+            kol_counts[name] = kol_counts.get(name, 0) + 1
+
+    # Sort each KOL's indicators by frequency
+    profile[channel_name] = dict(
+        sorted(kol_counts.items(), key=lambda x: x[1], reverse=True)
+    )
+
+    INDICATORS_FILE.parent.mkdir(exist_ok=True)
+    INDICATORS_FILE.write_text(
+        json.dumps(profile, ensure_ascii=False, indent=2), encoding='utf-8'
+    )
+    top = list(kol_counts.keys())[:5]
+    print(f'  📊 KOL 指標統計更新：{channel_name} → 前五名：{top}')
+
+
+def notes_indicator_summary() -> str:
+    """從 kol_indicators.json 產生 Markdown 摘要（追加到 notes 用）。"""
+    if not INDICATORS_FILE.exists():
+        return ''
+    try:
+        profile = json.loads(INDICATORS_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        return ''
+    lines = ['\n## KOL 技術指標統計（累計）\n']
+    for kol, counts in profile.items():
+        lines.append(f'### {kol}')
+        for ind, n in list(counts.items())[:10]:
+            lines.append(f'- {ind}: {n} 次')
+        lines.append('')
+    return '\n'.join(lines)
 
 
 # ── Parameter change application ──────────────────────────────────────────────
@@ -399,6 +461,7 @@ def main():
             analysis = analyze_with_claude(video['title'], name, transcript, client)
 
             append_to_notes(video, name, analysis)
+            update_kol_indicator_profile(name, analysis.get('ta_indicators', []))
             applied = apply_parameter_changes(analysis.get('parameter_changes', []))
             all_applied_changes.extend(applied)
 

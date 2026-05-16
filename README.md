@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-16 14:00 +08
+> Last updated: 2026-05-16 15:00 +08
 
 ---
 
@@ -410,6 +410,11 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
   - 信號：EMA9/21/50 排列、MACD histogram 連續方向、成交量 ≥1.3x 均量、資費翻轉
   - 方向由多數決（bull 信號數 vs bear 信號數），非預設做多
   - `analyze_dispatch()` 自動路由：主流幣用 `analyze_major`，其他用 `analyze`
+  - 信號擴充至 6 個：新增 RSI 動能（RSI 方向 × 50 線）、布林帶突破（bb_pct > 0.85 / < 0.15）
+- `scripts/auto_kol_update.py` KOL 指標追蹤：
+  - Claude 分析新增 `ta_indicators` 輸出欄位（指標名稱 + 用途 + 類型）
+  - `update_kol_indicator_profile()` 累計每個 KOL 提到的指標次數 → `notes/kol_indicators.json`
+  - 每次自動分析後更新統計，可追蹤 KOL 最重視的指標演變
 - `STATS_FROM` env var：Demo 重置後設定此日期，整點 P&L 和週報只計算之後的交易，無需刪除 `altcoin_trades.jsonl`
 
 ### 2026-05-15
