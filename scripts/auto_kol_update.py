@@ -173,7 +173,7 @@ monitor_coins.py 的關鍵參數（供你參考）：
 - STOP_LOSS_PCT = 0.035     # 固定止損 3.5%
 - TP_PCT = 0.07             # 固定止盈 7%
 - LEVERAGE = 20             # 槓桿
-- MARGIN_BY_SIGNALS = {2:60, 3:80, 4:100}  # 動態保證金
+- MARGIN_BY_SIGNALS = {{2:60, 3:80, 4:100}}  # 動態保證金
 - LEADERBOARD_MIN_PCT = 3.0 # 漲跌幅榜最低 24h 幅度
 
 KOL 頻道：{channel_name}
