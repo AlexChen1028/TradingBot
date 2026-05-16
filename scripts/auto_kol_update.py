@@ -28,7 +28,7 @@ except ImportError:
     YouTubeTranscriptApi = None
 
 try:
-    import google.generativeai as _genai
+    from google import genai as _genai
 except ImportError:
     _genai = None
 
@@ -211,7 +211,7 @@ KOL 頻道：{channel_name}
 - market_bias 根據 KOL 對未來 1-7 天的整體看法判斷"""
 
 
-def analyze_with_gemini(title: str, channel_name: str, transcript: str, model) -> dict:
+def analyze_with_gemini(title: str, channel_name: str, transcript: str, client) -> dict:
     prompt = ANALYSIS_PROMPT.format(
         channel_name=channel_name,
         title=title,
@@ -219,7 +219,10 @@ def analyze_with_gemini(title: str, channel_name: str, transcript: str, model) -
     )
     text = ''
     try:
-        resp = model.generate_content(prompt)
+        resp = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt,
+        )
         text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
@@ -410,11 +413,10 @@ def main():
         return
 
     if _genai is None:
-        print('ERROR: google-generativeai not installed. Run: pip3 install google-generativeai --break-system-packages')
+        print('ERROR: google-genai not installed. Run: pip3 install google-genai --break-system-packages')
         return
 
-    _genai.configure(api_key=GEMINI_KEY)
-    client = _genai.GenerativeModel('gemini-1.5-flash')
+    client = _genai.Client(api_key=GEMINI_KEY)
     seen   = load_seen()
     since  = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
 
