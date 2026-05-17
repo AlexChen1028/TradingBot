@@ -15,9 +15,14 @@ Cron (VPS, runs daily at 8am Taipei):
   0 0 * * * cd ~/TradingBot && python3 scripts/auto_kol_update.py >> logs/kol_update.log 2>&1
 """
 
-import os, sys, json, re, time, subprocess
+import os, sys, io, json, re, time, subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# Fix Windows console encoding (cp950 can't handle some Chinese chars)
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import feedparser
 import requests
@@ -246,8 +251,13 @@ _ANALYSIS_DEFAULT = {
 }
 
 
+_quota_exhausted = False  # set True when daily quota confirmed gone
+
 def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | None:
     """Call Gemini text API with automatic retry on 429 rate limit."""
+    global _quota_exhausted
+    if _quota_exhausted:
+        return None
     for attempt in range(max_retries):
         try:
             resp = client.models.generate_content(model='gemini-2.0-flash-lite', contents=prompt)
@@ -256,12 +266,25 @@ def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | 
             err = str(e)
             if '429' in err or 'RESOURCE_EXHAUSTED' in err:
                 m = re.search(r'retryDelay.*?(\d+)s', err)
-                wait = int(m.group(1)) + 5 if m else 65
+                if not m:
+                    # No retryDelay = daily quota exhausted, no point retrying
+                    print('  ❌ Gemini daily quota exhausted — aborting run.')
+                    _quota_exhausted = True
+                    return None
+                wait = int(m.group(1)) + 5
+                if wait > 120:
+                    # Very long delay also signals daily quota
+                    print(f'  ❌ Gemini quota exhausted (retryDelay={wait}s) — aborting run.')
+                    _quota_exhausted = True
+                    return None
                 print(f'  Rate limited — waiting {wait}s (attempt {attempt+1}/{max_retries})...')
                 time.sleep(wait)
             else:
                 print(f'  Gemini error: {e}')
                 return None
+    # All retries failed — treat as quota exhausted to avoid wasting time on remaining videos
+    print('  ❌ All retries failed — assuming quota exhausted, aborting run.')
+    _quota_exhausted = True
     return None
 
 
@@ -480,6 +503,8 @@ def main():
     all_applied_changes = []
 
     for ch_cfg in KOL_CHANNELS:
+        if _quota_exhausted:
+            break
         handle  = ch_cfg['handle']
         name    = ch_cfg['name']
         cid     = ch_cfg.get('channel_id', '')
@@ -502,6 +527,8 @@ def main():
         print(f'  {len(videos)} video(s) to process')
 
         for video in videos:
+            if _quota_exhausted:
+                break
             vid_id = video['id']
             if vid_id in seen:
                 continue
@@ -519,6 +546,8 @@ def main():
             # skip empty results (Gemini failed)
             if not analysis.get('key_insights') and not analysis.get('ta_indicators'):
                 print('    Analysis empty, skipping notes update')
+                if _quota_exhausted:
+                    break   # stop processing remaining videos
                 seen.add(vid_id)
                 time.sleep(4)
                 continue
