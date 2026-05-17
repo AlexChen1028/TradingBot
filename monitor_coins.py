@@ -26,9 +26,13 @@ MARGIN_USDT         = 60    # 預設保證金（fallback）
 MARGIN_BY_SIGNALS   = {2: 60, 3: 80, 4: 100}  # 動態保證金（依信號數量）
 LIMIT_ORDER_TIMEOUT = 15      # 限價掛單等待秒數，超過改市價
 LIMIT_SLIPPAGE      = 0.0002  # 限價優化幅度（做多掛低 / 做空掛高 0.02%）
-LEVERAGE       = 20     # 槓桿倍數
-STOP_LOSS_PCT   = 0.035  # 固定止損 3.5%（交易所 STOP_MARKET）
-TP_PCT          = 0.07   # 固定止盈 7%（交易所 TAKE_PROFIT_MARKET）
+LEVERAGE       = 20     # 槓桿倍數（山寨幣）
+STOP_LOSS_PCT   = 0.035  # 固定止損 3.5%（山寨幣）
+TP_PCT          = 0.07   # 固定止盈 7%（山寨幣）
+# 主流幣（BTC/ETH/SOL）專用參數
+MAJOR_LEVERAGE  = 50     # 槓桿倍數
+MAJOR_SL_PCT    = 0.01   # 固定止損 1%
+MAJOR_TP_PCT    = 0.02   # 固定止盈 2%
 TRAILING_PCT    = 0.15   # 軟體追蹤止盈備援（從最佳價格回落 15%）
 MAX_HOLD_HOURS = 36     # 最長持倉時間（原48，縮短避免套牢）
 TOP_N          = 20
@@ -205,9 +209,11 @@ def send_hourly_position_report():
                 f'https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT',
                 timeout=5,
             ).json()['price'])
-            pnl = (cur - ep) / ep * d * 100 * LEVERAGE
+            _lev = MAJOR_LEVERAGE if sym in set(WATCH_ALWAYS) else LEVERAGE
+            pnl = (cur - ep) / ep * d * 100 * _lev
+            _type = '主流' if sym in set(WATCH_ALWAYS) else '山寨'
             lines.append(
-                f"{side} <b>{coin}</b> 20x逐倉（山寨）\n"
+                f"{side} <b>{coin}</b> {_lev}x逐倉（{_type}）\n"
                 f"   進場 {ep:.4f} → 現價 {cur:.4f}  保證金盈虧 {pnl:+.2f}%"
             )
         except Exception:
@@ -630,11 +636,17 @@ def _enter_position(exchange, symbol, direction, amount):
 
 def open_pos(exchange, symbol, direction, positions, n_signals=3):
     try:
+        is_major  = symbol in set(WATCH_ALWAYS)
+        lev       = MAJOR_LEVERAGE  if is_major else LEVERAGE
+        sl_pct    = MAJOR_SL_PCT    if is_major else STOP_LOSS_PCT
+        tp_pct    = MAJOR_TP_PCT    if is_major else TP_PCT
+        coin_type = '主流' if is_major else '山寨'
+
         exchange.set_margin_mode('isolated', symbol)
-        exchange.set_leverage(LEVERAGE, symbol, params={'marginMode': 'isolated'})
+        exchange.set_leverage(lev, symbol, params={'marginMode': 'isolated'})
         ref_price = float(exchange.fetch_ticker(symbol)['last'])
         margin    = MARGIN_BY_SIGNALS.get(n_signals, MARGIN_USDT)
-        amount    = round(margin * LEVERAGE / ref_price, 4)
+        amount    = round(margin * lev / ref_price, 4)
         sl_side   = 'sell' if direction == 1 else 'buy'
 
         price = _enter_position(exchange, symbol, direction, amount)
@@ -644,20 +656,20 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         # 固定止損（STOP_MARKET）
         try:
             sl_price = round(
-                price * (1 - STOP_LOSS_PCT) if direction == 1 else price * (1 + STOP_LOSS_PCT), 8
+                price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
             )
             sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
                 'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
             })
             sl_id = sl_order['id']
-            print(f"  ✅ 固定止損 {STOP_LOSS_PCT*100:.1f}% @ {sl_price:.6g} 已掛")
+            print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛")
         except Exception as e:
             print(f"  ❌ 止損訂單失敗 {symbol}: {e}")
 
         # 固定止盈天花板（TAKE_PROFIT_MARKET）
         try:
             tp_price = round(
-                price * (1 + TP_PCT) if direction == 1 else price * (1 - TP_PCT), 4
+                price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
             )
             tp_order = exchange.create_order(symbol, 'take_profit_market', sl_side, amount, None, {
                 'stopPrice': tp_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
@@ -679,13 +691,13 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         save_positions(positions)
         side = 'LONG' if direction == 1 else 'SHORT'
         coin = symbol.split('/')[0]
-        sl_label = f"止損 {STOP_LOSS_PCT*100:.1f}% {'✅' if sl_id else '⚠️'}"
-        tp_label = f"止盈天花板 {TP_PCT*100:.0f}% {'✅' if tp_id else '⚠️'}"
-        print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${margin}×{LEVERAGE}x ({n_signals}信號) | {sl_label} {tp_label}")
+        sl_label = f"止損 {sl_pct*100:.1f}% {'✅' if sl_id else '⚠️'}"
+        tp_label = f"止盈天花板 {tp_pct*100:.0f}% {'✅' if tp_id else '⚠️'}"
+        print(f"  ✅ 開倉 {side} {coin} | {amount} @ {price:.4f} | ${margin}×{lev}x ({n_signals}信號) | {sl_label} {tp_label}")
         tg(
             f"{'🟢' if direction==1 else '🔴'} <b>開倉 {side} {coin}</b>\n"
             f"進場：{price:.4f} USDT\n"
-            f"數量：{amount}  保證金：${margin}×{LEVERAGE}x 逐倉（{n_signals} 信號）\n"
+            f"數量：{amount}  保證金：${margin}×{lev}x 逐倉（{coin_type}，{n_signals} 信號）\n"
             f"{sl_label} | {tp_label}"
         )
     except Exception as e:
@@ -1016,7 +1028,8 @@ def main():
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")
-    print(f"  每筆 ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.1%}  TP {TP_PCT:.0%}  備援 {TRAILING_PCT:.0%}")
+    print(f"  山寨: ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.1%}  TP {TP_PCT:.0%}")
+    print(f"  主流: ${MARGIN_USDT}×{MAJOR_LEVERAGE}x  SL {MAJOR_SL_PCT:.1%}  TP {MAJOR_TP_PCT:.0%}  備援 {TRAILING_PCT:.0%}")
     print(f"  最多 {MAX_POSITIONS} 個倉位  門檻 {MIN_SIGNALS}/4 個信號")
     print("=" * 60)
 

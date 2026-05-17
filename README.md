@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-16 14:28 +08
+> Last updated: 2026-05-17 15:57 +08
 
 ---
 
@@ -109,15 +109,15 @@ Gaps currently noted (see notes file):
 
 **Position parameters:**
 
-| Parameter | Value |
-|---|---|
-| Margin per trade | 2 signals: $60 / 3 signals: $80 / 4 signals: $100 × 20x isolated |
-| Max open positions | Unlimited |
-| Stop-loss | Exchange `STOP_MARKET` 3.5% from entry |
-| Take-profit | Exchange `TAKE_PROFIT_MARKET` 7% from entry |
-| Break-even SL | Auto-move SL to entry price once gain ≥ 3% |
-| Software trailing backup | 15% from peak (activates if exchange order fails) |
-| Max hold time | 36 hours |
+| Parameter | Altcoin | Major (BTC/ETH/SOL) |
+|---|---|---|
+| Leverage | 20x isolated | 50x isolated |
+| Margin per trade | 2s: $60 / 3s: $80 / 4s: $100 | same |
+| Stop-loss | Exchange `STOP_MARKET` 3.5% | 1% from entry |
+| Take-profit | Exchange `TAKE_PROFIT_MARKET` 7% | 2% from entry |
+| Break-even SL | Auto-move SL to entry price once gain ≥ 3% | same |
+| Software trailing backup | 15% from peak | same |
+| Max hold time | 36 hours | same |
 
 ### Breaking News Detector (`monitor_coins.py`)
 - Polls CoinDesk, CoinTelegraph, Decrypt RSS every scan cycle
@@ -392,6 +392,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-05-17
+- `monitor_coins.py` 主流幣（BTC/ETH/SOL）獨立止盈止損與槓桿：
+  - 槓桿：20x → **50x** isolated（山寨幣維持 20x）
+  - 止損：3.5% → **1%**（主流幣波動較小，需更緊的止損）
+  - 止盈：7% → **2%**（對應 50x 下 2% = 保證金 100% 獲利）
+  - `open_pos()` 自動依 `WATCH_ALWAYS` 判斷主流/山寨，套用對應參數
 
 ### 2026-05-16
 - `main.py` `compute_kol_filters()`：BTC/ETH/SOL 機器人全面落地加密龐克 KOL 觀點
