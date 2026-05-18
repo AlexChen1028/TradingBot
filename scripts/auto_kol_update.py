@@ -284,6 +284,10 @@ def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | 
                     return None
                 print(f'  Rate limited — waiting {wait}s (attempt {attempt+1}/{max_retries})...')
                 time.sleep(wait)
+            elif '400' in err and 'API_KEY_INVALID' in err:
+                print('  ❌ Gemini API key invalid — aborting run.')
+                _quota_exhausted = True  # reuse flag to stop all further calls
+                return None
             else:
                 print(f'  Gemini error: {e}')
                 return None
