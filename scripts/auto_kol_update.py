@@ -265,6 +265,11 @@ def _call_gemini_with_retry(client, prompt: str, max_retries: int = 3) -> str | 
         except Exception as e:
             err = str(e)
             if '429' in err or 'RESOURCE_EXHAUSTED' in err:
+                # PerDay quota or limit:0 → daily allowance gone, retrying is pointless
+                if 'PerDay' in err or "'limit': 0" in err or '"limit": 0' in err:
+                    print('  ❌ Gemini daily quota exhausted — aborting run.')
+                    _quota_exhausted = True
+                    return None
                 m = re.search(r'retryDelay.*?(\d+)s', err)
                 if not m:
                     # No retryDelay = daily quota exhausted, no point retrying
