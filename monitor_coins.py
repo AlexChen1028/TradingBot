@@ -252,6 +252,9 @@ def send_performance_report():
     """讀取過去7天山寨幣交易記錄，計算淨利潤和報酬率，發送到TG"""
     cutoff = now8() - timedelta(days=7)
     trade_files = {
+        'BTC':  'btc_trades.jsonl',
+        'ETH':  'eth_trades.jsonl',
+        'SOL':  'sol_trades.jsonl',
         '山寨': ALTCOIN_TRADES_FILE,
     }
 
@@ -312,7 +315,7 @@ def send_performance_report():
     )
 
     msg = (
-        f"{emoji} <b>山寨幣週績效報告（過去7天）</b>\n"
+        f"{emoji} <b>週績效報告（過去7天）</b>\n"
         f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
         f"{coin_lines}\n\n"
         f"總交易：{total_trades} 筆  勝率 <b>{total_wr:.0f}%</b>\n"
