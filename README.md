@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-17 15:57 +08
+> Last updated: 2026-05-19 01:20 +08
 
 ---
 
@@ -392,6 +392,15 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-05-19
+- `monitor_coins.py` `analyze_major()`：依 `notes/youtube-insights.md` 加入 KOL 參考邏輯
+  - **信號 7：bb_mid 支阻互換**（BTC歐陽）：前根收盤低於布林中軌，反抽到中軌 ±0.3% → 空頭訊號
+  - **信號 8：日線 EMA200 牛熊分界**（加密龐克）：每次分析獨立抓取 210 根日線，站上/跌破 EMA200
+  - **信號 9：嘎空燃料強化**（加密龐克）：接近 EMA200（≥97%）且資費轉負，與 signal 4 不重複
+  - **信號 10：多頭過熱過濾**（加密龐克）：資費 > 0.05% = 假突破風險，列入空頭票
+  - **移除信號 6 的地板追空**（BTC飛揚）：bb_pct < 0.15 不再加空頭訊號（地板不追空）
+  - **週末量能門檻**（BTC飛揚）：scan loop 週末時主流幣 MIN_SIGNALS +1，降低過度交易
 
 ### 2026-05-17
 - `monitor_coins.py` 主流幣（BTC/ETH/SOL）獨立止盈止損與槓桿：

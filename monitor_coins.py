@@ -529,6 +529,16 @@ def analyze_major(exchange, symbol):
             bear.append('vol')
             details.append(f"成交量放大 {vol_now/vol_20:.1f}x（偏空趨勢）")
 
+    # 日線 EMA200（供後面 KOL 訊號使用，每次獨立抓取）
+    ema200_daily = None
+    try:
+        raw_1d = exchange.fetch_ohlcv(symbol, '1d', limit=210)
+        if raw_1d and len(raw_1d) >= 50:
+            dc = pd.DataFrame(raw_1d, columns=['ts','open','high','low','close','volume'])['close']
+            ema200_daily = float(dc.ewm(span=200, adjust=False).mean().iloc[-1])
+    except Exception:
+        pass
+
     # 4. 資金費率（同山寨幣邏輯）
     if fr_now is not None and fr_prev is not None:
         fr_change = abs(fr_now - fr_prev)
@@ -550,18 +560,48 @@ def analyze_major(exchange, symbol):
         bear.append('rsi_mom')
         details.append(f"RSI {rsi_now:.0f} 跌破 50 且下降")
 
-    # 6. 布林帶位置：突破上軌（多頭動能）/ 跌破下軌（空頭動能）
+    # 6. 布林帶位置：突破上軌（多頭動能）
+    #    KOL（BTC飛揚）：地板不追空 → 移除跌破下軌的空頭信號
     bm  = c.rolling(20).mean()
     bstd = c.rolling(20).std()
     bb_upper = bm + 2 * bstd
     bb_lower = bm - 2 * bstd
     bb_pct   = float((c.iloc[-1] - bb_lower.iloc[-1]) / (bb_upper.iloc[-1] - bb_lower.iloc[-1] + 1e-9))
+    bb_mid_val = float(bm.iloc[-1])
+    price = float(c.iloc[-1])
     if bb_pct > 0.85:
         bull.append('bb')
-        details.append(f"價格突破布林上軌（bb_pct={bb_pct:.2f}）")
-    elif bb_pct < 0.15:
-        bear.append('bb')
-        details.append(f"價格跌破布林下軌（bb_pct={bb_pct:.2f}）")
+        details.append(f"突破布林上軌（bb_pct={bb_pct:.2f}）")
+
+    # 7. bb_mid 支阻互換（BTC歐陽）：
+    #    前一根收盤在中軌下方 + 現在反抽到中軌附近 (±0.3%) = 壓力位做空
+    prev_close = float(c.iloc[-2])
+    if prev_close < bb_mid_val and abs(price - bb_mid_val) / (bb_mid_val + 1e-9) < 0.003:
+        bear.append('bb_mid_flip')
+        details.append(f"反抽布林中軌（支阻互換）mid={bb_mid_val:,.0f}")
+
+    # 8. 日線 EMA200 牛熊分界（加密龐克）
+    if ema200_daily is not None:
+        if price > ema200_daily:
+            bull.append('ema200')
+            details.append(f"站上 200 日均線 EMA200={ema200_daily:,.0f}")
+        else:
+            bear.append('ema200')
+            details.append(f"跌破 200 日均線 EMA200={ema200_daily:,.0f}")
+
+    # 9. 嘎空燃料強化（加密龐克）：接近 EMA200 + 資費轉負 = 組合多頭訊號
+    #    不重複計算（若 signal 4 已加 funding 則跳過）
+    if (ema200_daily is not None and fr_now is not None
+            and price > ema200_daily * 0.97
+            and fr_now < -0.0001
+            and 'funding' not in bull):
+        bull.append('squeeze_fuel')
+        details.append(f"嘎空燃料：近 EMA200 且資費轉負 {fr_now*100:+.4f}%")
+
+    # 10. 多頭過熱過濾（加密龐克）：資費 > 0.05% = 假突破風險，削減多頭信心
+    if fr_now is not None and fr_now > 0.0005:
+        bear.append('fr_overheat')
+        details.append(f"多頭資費過熱 {fr_now*100:+.4f}%，假突破風險")
 
     # 多數決方向
     if len(bull) > len(bear):
@@ -572,17 +612,19 @@ def analyze_major(exchange, symbol):
         direction, aligned = 1, bull  # 平手預設多
 
     rsi   = float(_rsi(c, 14).iloc[-1])
-    trend = 1 if float(c.iloc[-1]) > float(ema50.iloc[-1]) else -1
+    trend = 1 if price > float(ema50.iloc[-1]) else -1
 
     return {
         'symbol':    symbol,
-        'price':     float(c.iloc[-1]),
+        'price':     price,
         'signals':   aligned,
         'details':   details,
         'n':         len(aligned),
         'direction': direction,
         'rsi':       rsi,
         'trend':     trend,
+        'ema200':    ema200_daily,
+        'weekend':   now8().weekday() >= 5,   # BTC飛揚：週末量能萎縮
     }
 
 
@@ -997,7 +1039,9 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
         if symbol in positions or len(positions) >= MAX_POSITIONS:
             continue
         result = analyze_dispatch(exchange_pub, symbol)
-        if result and result['n'] >= MIN_SIGNALS:
+        # BTC飛揚：週末量能萎縮，主流幣門檻提高 1
+        min_sig = MIN_SIGNALS + (1 if result and result.get('weekend') else 0)
+        if result and result['n'] >= min_sig:
             d = result['direction']
             if d == 1 and result.get('rsi', 50) >= 80:
                 continue  # RSI 超買，跳過做多
