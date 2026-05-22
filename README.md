@@ -397,6 +397,9 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - `monitor_coins.py` `send_performance_report()`：績效報告時間窗口由 7 天改為 **30 天**
   - 原因：BTC/ETH/SOL 主力幣持倉周期較長（數天），7 天窗口會漏掉大多數已平倉交易
   - 標題改為「月績效報告（過去30天）」
+- `monitor_coins.py` `log_altcoin_trade()`：BTC/ETH/SOL 平倉記錄寫入各自獨立檔案
+  - 修復：coin-monitor 的主流幣交易全部寫進 `altcoin_trades.jsonl`，績效報告無法分幣種統計
+  - BTC → `btc_trades.jsonl`、ETH → `eth_trades.jsonl`、SOL → `sol_trades.jsonl`、其餘 → `altcoin_trades.jsonl`
 
 ### 2026-05-19
 - `monitor_coins.py` `analyze_major()`：依 `notes/youtube-insights.md` 加入 KOL 參考邏輯

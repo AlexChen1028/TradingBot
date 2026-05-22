@@ -170,11 +170,18 @@ def check_breaking_news():
 
 
 # ── 交易記錄 ──────────────────────────────────────────────────────────────────
+_MAJOR_TRADE_FILES = {
+    'BTC': 'btc_trades.jsonl',
+    'ETH': 'eth_trades.jsonl',
+    'SOL': 'sol_trades.jsonl',
+}
+
 def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry_time, reason, margin_usdt=None):
     pnl_usdt = amount * (close_price - entry_price) * direction
     fee_usdt = amount * (entry_price + close_price) * TAKER_FEE
+    coin = symbol.split('/')[0]
     record = {
-        'coin':         symbol.split('/')[0],
+        'coin':         coin,
         'direction':    direction,
         'entry_price':  entry_price,
         'close_price':  close_price,
@@ -187,7 +194,9 @@ def log_altcoin_trade(symbol, direction, entry_price, close_price, amount, entry
         'close_time':   now8().isoformat(),
         'reason':       reason,
     }
-    with open(ALTCOIN_TRADES_FILE, 'a', encoding='utf-8') as f:
+    # 主流幣寫獨立檔案，山寨幣寫 altcoin_trades.jsonl
+    trade_file = _MAJOR_TRADE_FILES.get(coin, ALTCOIN_TRADES_FILE)
+    with open(trade_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(record) + '\n')
 
 
