@@ -69,6 +69,13 @@ MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：
 DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
 CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
+# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 第二輪 2026-05-22）─────────
+# 三個 KOL 交集的靜態 Zone，每輪 KOL 更新後手動調整。
+# KEY_SUPPORT_ZONE    : 三方下沿共識（歐陽 75,500~76,000 最核心），空在此區風險極高
+# KEY_RESISTANCE_ZONE : 三方壓力共識（飛揚 78,700、歐陽 78,000、龐克 STH 78,300+200MA 82,000）
+KEY_SUPPORT_ZONE    = (75_500, 76_000)   # 2026-05-22 三方支撐共識下沿
+KEY_RESISTANCE_ZONE = (78_000, 82_000)   # 2026-05-22 三方壓力共識
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -301,6 +308,9 @@ def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
         'right_side_long': False, 'fr_flip_negative': False,
         'near_support': False, 'spy_qqq_declining': False,
         'fr_raw': 0.0,
+        'in_support_zone': False,    # 靜態 KEY_SUPPORT_ZONE
+        'in_resistance_zone': False, # 靜態 KEY_RESISTANCE_ZONE
+        'squeeze_short_risk': False, # 大幅負費率 + OI 顯著 → 嘎空風險
     }
     try:
         raw_daily  = exchange_pub.fetch_ohlcv(SPOT_SYMBOL, '1d', limit=210)
@@ -338,6 +348,15 @@ def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
         near_support = bool(close < ema200 * 1.02)    # at or below EMA200 — support zone
         spy_qqq_declining = bool(spy_ret < -0.005 or qqq_ret < -0.005)
 
+        # 靜態 KOL Zone（KEY_SUPPORT_ZONE / KEY_RESISTANCE_ZONE，每輪 KOL 更新手動調整）
+        in_support_zone    = bool(KEY_SUPPORT_ZONE[0] <= close <= KEY_SUPPORT_ZONE[1])
+        in_resistance_zone = bool(KEY_RESISTANCE_ZONE[0] <= close <= KEY_RESISTANCE_ZONE[1])
+
+        # 嘎空短線風險（加密龐克第二輪）：大幅負費率 + 統計顯著（OI 代理）→ 暫停做空
+        # fr_z 是 rolling 21-period z-score；abs > 1.5 = 當前費率已超出歷史 1.5σ → 極端程度
+        fr_z = float(df['fr_z'].fillna(0).iloc[-1]) if 'fr_z' in df.columns else 0.0
+        squeeze_short_risk = bool(fr_raw < -0.0003 and abs(fr_z) > 1.5)
+
         return {
             'ema200': ema200, 'ma200_ratio': ma200_ratio,
             'squeeze_fuel_up': squeeze_fuel_up,
@@ -347,6 +366,9 @@ def compute_kol_filters(exchange_pub, df: pd.DataFrame) -> dict:
             'near_support': near_support,
             'spy_qqq_declining': spy_qqq_declining,
             'fr_raw': fr_raw,
+            'in_support_zone': in_support_zone,
+            'in_resistance_zone': in_resistance_zone,
+            'squeeze_short_risk': squeeze_short_risk,
         }
     except Exception as e:
         log.warning(f"compute_kol_filters failed: {e}")
@@ -786,6 +808,12 @@ def main():
                      f"fr_flip_neg={kol['fr_flip_negative']}  "
                      f"near_sup={kol['near_support']}  "
                      f"spyqqq_down={kol['spy_qqq_declining']}")
+            _close_now = float(df['close'].iloc[-1])
+            _zone_tag  = ('🟢 支撐區' if kol['in_support_zone'] else
+                          '🔴 壓力區' if kol['in_resistance_zone'] else '⬜ 中性')
+            log.info(f"Zone    : {_zone_tag}  price={_close_now:,.2f}  "
+                     f"sup={KEY_SUPPORT_ZONE}  res={KEY_RESISTANCE_ZONE}  "
+                     f"squeeze_short_risk={kol['squeeze_short_risk']}")
 
             # ── KOL direction filters ──────────────────────────────────────────
             # 假突破風險：資費過熱 + 緊貼 EMA200 → 暫停 LONG
@@ -798,6 +826,14 @@ def main():
             # 靠近支撐區做空風險：price ≤ EMA200×1.02 且資費非正 → 暫停 SHORT
             if direction == -1 and kol['near_support'] and kol['fr_raw'] <= 0:
                 log.info("KOL FILTER: 靠近支撐區且資費非正 — 暫停 SHORT（空在支撐上風險）")
+                direction = 0
+
+            # 大幅負費率 + OI 顯著（fr_z 代理）→ 暫停做空，嘎空風險（加密龐克第二輪）
+            if direction == -1 and kol['squeeze_short_risk']:
+                log.info(f"KOL FILTER: 大幅負費率+OI顯著 — 暫停 SHORT "
+                         f"（fr={kol['fr_raw']:.5f}，|fr_z|>1.5σ）")
+                tg_send(f"⚠️ [{_COIN}] KOL: 大幅負費率嘎空風險，SHORT 暫停"
+                        f"（fr={kol['fr_raw']:.5f}）")
                 direction = 0
 
             # 資費翻負（嘎空動能訊號）→ TG 通知

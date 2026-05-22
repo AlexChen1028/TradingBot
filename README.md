@@ -394,6 +394,11 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-05-22
+- `main.py` `compute_kol_filters()`：依 `notes/youtube-insights.md` 第二輪（2026-05-22）加入靜態 Zone 與嘎空保護
+  - 新增常數 `KEY_SUPPORT_ZONE = (75500, 76000)`、`KEY_RESISTANCE_ZONE = (78000, 82000)`（三方 KOL 共識，每輪手動更新）
+  - `in_support_zone` / `in_resistance_zone`：偵測現價是否在兩個靜態 Zone 內
+  - `squeeze_short_risk`：`fr_raw < -0.0003` 且 `|fr_z| > 1.5σ` → 暫停做空（大幅負費率嘎空風險）
+  - main loop 每 tick 新增 Zone log，顯示價格相對支撐/壓力區位置
 - `monitor_coins.py` `send_performance_report()`：績效報告時間窗口由 7 天改為 **30 天**
   - 原因：BTC/ETH/SOL 主力幣持倉周期較長（數天），7 天窗口會漏掉大多數已平倉交易
   - 標題改為「月績效報告（過去30天）」
