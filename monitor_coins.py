@@ -249,8 +249,8 @@ def send_hourly_position_report():
 
 
 def send_performance_report():
-    """讀取過去7天山寨幣交易記錄，計算淨利潤和報酬率，發送到TG"""
-    cutoff = now8() - timedelta(days=7)
+    """讀取過去30天交易記錄，計算淨利潤和報酬率，發送到TG"""
+    cutoff = now8() - timedelta(days=30)
     trade_files = {
         'BTC':  'btc_trades.jsonl',
         'ETH':  'eth_trades.jsonl',
@@ -300,7 +300,7 @@ def send_performance_report():
         total_trades += len(rows)
 
     if total_trades == 0:
-        tg_trading(f"📊 <b>週績效報告（過去7天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
+        tg_trading(f"📊 <b>月績效報告（過去30天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
         return
 
     roi         = total_net / total_margin * 100 if total_margin > 0 else 0
@@ -315,7 +315,7 @@ def send_performance_report():
     )
 
     msg = (
-        f"{emoji} <b>週績效報告（過去7天）</b>\n"
+        f"{emoji} <b>月績效報告（過去30天）</b>\n"
         f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
         f"{coin_lines}\n\n"
         f"總交易：{total_trades} 筆  勝率 <b>{total_wr:.0f}%</b>\n"
