@@ -17,9 +17,9 @@ SCAN_INTERVAL        = 15 * 60      # 每 15 分鐘掃一次信號
 UPDATE_INTERVAL      = 2  * 60 * 60 # 每 2 小時更新幣種清單
 LEADERBOARD_INTERVAL = 60 * 60      # 每小時發漲跌幅榜
 
-MIN_SIGNALS           = 2   # 一般掃描門檻
+MIN_SIGNALS           = 3   # 一般掃描門檻（2026-05-23 KOL: 提高至3+，降低假突破頻率）
 MIN_LEADERBOARD_SIGNALS = 2   # 漲跌幅榜幣種（寬鬆）
-LEADERBOARD_MIN_PCT   = 3.0  # 24h 漲跌超過 3% 才考慮
+LEADERBOARD_MIN_PCT   = 4.0  # 24h 漲跌超過 4% 才考慮（2026-05-23 KOL: 震盪雜訊多→提高至4%）
 LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 999    # 無上限（原3→5）
 MARGIN_USDT         = 60    # 預設保證金（fallback）

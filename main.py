@@ -69,12 +69,13 @@ MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：
 DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
 CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
-# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 第二輪 2026-05-22）─────────
+# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-05-23 45支影片統整）──────
 # 三個 KOL 交集的靜態 Zone，每輪 KOL 更新後手動調整。
-# KEY_SUPPORT_ZONE    : 三方下沿共識（歐陽 75,500~76,000 最核心），空在此區風險極高
+# KEY_SUPPORT_ZONE    : 三方支撐共識（飛揚 MA/STH 動態、歐陽 75,500~76,000、龐克 STH 78,300）
+#                       → 上沿改為 78,500（含 STH 成本線支撐區間）
 # KEY_RESISTANCE_ZONE : 三方壓力共識（飛揚 78,700、歐陽 78,000、龐克 STH 78,300+200MA 82,000）
-KEY_SUPPORT_ZONE    = (75_500, 76_000)   # 2026-05-22 三方支撐共識下沿
-KEY_RESISTANCE_ZONE = (78_000, 82_000)   # 2026-05-22 三方壓力共識
+KEY_SUPPORT_ZONE    = (75_500, 78_500)   # 2026-05-23 三方支撐共識（下沿75,500 ~ STH78,300）
+KEY_RESISTANCE_ZONE = (78_000, 82_000)   # 2026-05-23 三方壓力共識（飛揚78,700~歐陽78,000~200MA82,000）
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
