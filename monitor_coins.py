@@ -258,84 +258,126 @@ def send_hourly_position_report():
 
 
 def send_performance_report():
-    """讀取過去30天交易記錄，計算淨利潤和報酬率，發送到TG"""
-    cutoff = now8() - timedelta(days=30)
-    trade_files = {
-        'BTC':  'btc_trades.jsonl',
-        'ETH':  'eth_trades.jsonl',
-        'SOL':  'sol_trades.jsonl',
+    """讀取交易記錄（依 STATS_FROM 起算），計算主流幣 vs 山寨幣分區淨利潤，發送到TG"""
+    cutoff = now8() - timedelta(days=90)  # 最遠回溯 90 天，STATS_FROM 為主要起算點
+    # 主流幣 / 山寨幣分區
+    major_files = {
+        'BTC': 'btc_trades.jsonl',
+        'ETH': 'eth_trades.jsonl',
+        'SOL': 'sol_trades.jsonl',
+    }
+    alt_files = {
         '山寨': ALTCOIN_TRADES_FILE,
     }
 
-    coin_stats = {}
-    total_gross = total_fee = total_net = total_margin = total_trades = 0
-
-    for label, fname in trade_files.items():
-        p = Path(fname)
-        if not p.exists():
-            continue
-        rows = []
-        for line in p.read_text(encoding='utf-8').splitlines():
-            if not line.strip():
+    def _load_stats(files_dict):
+        stats = {}
+        for label, fname in files_dict.items():
+            p = Path(fname)
+            if not p.exists():
                 continue
-            try:
-                r = json.loads(line)
-                ct = r.get('close_time', '1970-01-01')
-                if datetime.fromisoformat(ct) < cutoff:
+            rows = []
+            for line in p.read_text(encoding='utf-8').splitlines():
+                if not line.strip():
                     continue
-                if STATS_FROM and ct < STATS_FROM:
+                try:
+                    r = json.loads(line)
+                    ct = r.get('close_time', '1970-01-01')
+                    if datetime.fromisoformat(ct) < cutoff:
+                        continue
+                    if STATS_FROM and ct < STATS_FROM:
+                        continue
+                    rows.append(r)
+                except Exception:
                     continue
-                rows.append(r)
-            except Exception:
+            if not rows:
                 continue
-        if not rows:
-            continue
+            gross  = sum(r.get('pnl_usdt', 0) for r in rows)
+            fee    = sum(
+                r.get('fee_usdt') if r.get('fee_usdt') is not None
+                else r.get('amount', 0) * (r.get('entry_price', 0) + r.get('close_price', 0)) * TAKER_FEE
+                for r in rows
+            )
+            net    = gross - fee
+            margin = sum(r.get('margin_usdt', MARGIN_USDT) for r in rows)
+            wins   = sum(1 for r in rows if r.get('net_pnl_usdt', r.get('pnl_usdt', 0)) > 0)
+            stats[label] = {'n': len(rows), 'gross': gross, 'fee': fee,
+                            'net': net, 'margin': margin, 'wins': wins}
+        return stats
 
-        gross  = sum(r.get('pnl_usdt', 0) for r in rows)
-        fee    = sum(
-            r.get('fee_usdt') if r.get('fee_usdt') is not None
-            else r.get('amount', 0) * (r.get('entry_price', 0) + r.get('close_price', 0)) * TAKER_FEE
-            for r in rows
-        )
-        net    = gross - fee
-        margin = sum(r.get('margin_usdt', MARGIN_USDT) for r in rows)
-        wins   = sum(1 for r in rows if r.get('net_pnl_usdt', r.get('pnl_usdt', 0)) > 0)
+    major_stats = _load_stats(major_files)
+    alt_stats   = _load_stats(alt_files)
+    all_stats   = {**major_stats, **alt_stats}
 
-        coin_stats[label] = {'n': len(rows), 'gross': gross, 'fee': fee, 'net': net, 'margin': margin, 'wins': wins}
-        total_gross  += gross
-        total_fee    += fee
-        total_net    += net
-        total_margin += margin
-        total_trades += len(rows)
+    total_trades = sum(s['n']      for s in all_stats.values())
+    total_gross  = sum(s['gross']  for s in all_stats.values())
+    total_fee    = sum(s['fee']    for s in all_stats.values())
+    total_net    = sum(s['net']    for s in all_stats.values())
+    total_margin = sum(s['margin'] for s in all_stats.values())
+    total_wins   = sum(s['wins']   for s in all_stats.values())
+
+    since_str = STATS_FROM if STATS_FROM else (now8() - timedelta(days=30)).strftime('%Y-%m-%d')
+    title_tag = f"（{since_str} 起）"
 
     if total_trades == 0:
-        tg_trading(f"📊 <b>月績效報告（過去30天）</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
+        tg_trading(f"📊 <b>績效報告{title_tag}</b>\n"
+                   f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n尚無已完成交易記錄。")
         return
 
-    roi         = total_net / total_margin * 100 if total_margin > 0 else 0
-    total_wins  = sum(s['wins'] for s in coin_stats.values())
-    total_wr    = total_wins / total_trades * 100 if total_trades > 0 else 0
-    emoji       = '📈' if total_net >= 0 else '📉'
+    def _section_lines(stats):
+        lines = []
+        for label, s in stats.items():
+            wr = s['wins'] / s['n'] * 100 if s['n'] > 0 else 0
+            e  = '🟢' if s['net'] >= 0 else '🔴'
+            lines.append(
+                f"{e} {label:<4}  {s['n']}筆  勝率{wr:.0f}%  "
+                f"淨利 <b>{s['net']:+.2f} U</b>"
+            )
+        return '\n'.join(lines)
 
-    coin_lines = '\n'.join(
-        f"{'🟢' if s['net'] >= 0 else '🔴'} {label:<4}  {s['n']}筆  "
-        f"勝率 {s['wins']/s['n']*100:.0f}%  淨利 <b>{s['net']:+.2f} U</b>  費 {s['fee']:.2f} U"
-        for label, s in coin_stats.items()
-    )
+    def _subtotal(stats):
+        n   = sum(s['n']   for s in stats.values())
+        net = sum(s['net'] for s in stats.values())
+        return n, net
 
-    msg = (
-        f"{emoji} <b>月績效報告（過去30天）</b>\n"
-        f"⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}\n\n"
-        f"{coin_lines}\n\n"
-        f"總交易：{total_trades} 筆  勝率 <b>{total_wr:.0f}%</b>\n"
+    major_n, major_net = _subtotal(major_stats)
+    alt_n,   alt_net   = _subtotal(alt_stats)
+
+    roi      = total_net / total_margin * 100 if total_margin > 0 else 0
+    total_wr = total_wins / total_trades * 100 if total_trades > 0 else 0
+    emoji    = '📈' if total_net >= 0 else '📉'
+
+    parts = [f"{emoji} <b>績效報告{title_tag}</b>\n⏰ {now8().strftime('%Y-%m-%d %H:%M +08')}"]
+
+    if major_stats:
+        me = '🟢' if major_net >= 0 else '🔴'
+        parts.append(
+            f"\n<b>── 主流幣 ──</b>\n"
+            f"{_section_lines(major_stats)}\n"
+            f"{me} 小計  {major_n}筆  淨利 <b>{major_net:+.2f} U</b>"
+        )
+
+    if alt_stats:
+        ae = '🟢' if alt_net >= 0 else '🔴'
+        parts.append(
+            f"\n<b>── 山寨幣 ──</b>\n"
+            f"{_section_lines(alt_stats)}\n"
+            f"{ae} 小計  {alt_n}筆  淨利 <b>{alt_net:+.2f} U</b>"
+        )
+
+    parts.append(
+        f"\n<b>── 合計 ──</b>\n"
+        f"總交易：{total_trades}筆  勝率 <b>{total_wr:.0f}%</b>\n"
         f"毛利潤：{total_gross:+.2f} U\n"
         f"手續費：-{total_fee:.2f} U\n"
         f"<b>淨利潤：{total_net:+.2f} U</b>\n"
         f"投入保證金：{total_margin:.0f} U\n"
-        f"<b>週報酬率：{roi:+.2f}%</b>"
+        f"<b>報酬率：{roi:+.2f}%</b>"
     )
+
+    msg = '\n'.join(parts)
     tg_trading(msg)
-    print(f"  📊 週績效報告已發送：淨利 {total_net:+.2f} U  ROI {roi:+.2f}%")
+    print(f"  📊 績效報告已發送：淨利 {total_net:+.2f} U  ROI {roi:+.2f}%")
 
 
 # ── 幣種清單更新 ──────────────────────────────────────────────────────────────

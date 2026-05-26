@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-23 +08
+> Last updated: 2026-05-26 +08
 
 ---
 
@@ -392,6 +392,12 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-05-26
+- `monitor_coins.py` `send_performance_report()`：改版績效報告
+  - 報告分為「主流幣（BTC/ETH/SOL）」和「山寨幣」兩區，各含小計
+  - 以 `STATS_FROM` 環境變數作為起算日，標題顯示「(起算日 起)」
+- `docker-compose.yml`：`coin-monitor` 加入 `STATS_FROM=2026-05-26`（今日錢包重置起算點）
 
 ### 2026-05-23
 - `main.py`：依 `notes/youtube-insights.md` 2026-05-23（45支影片統整）更新 KOL 共識區間

@@ -55,6 +55,8 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      - STATS_FROM=2026-05-26   # 績效報告起算日（重置錢包日期）
     volumes:
       - ./monitor_coins.py:/app/monitor_coins.py
       - ./scan_coins.py:/app/scan_coins.py
