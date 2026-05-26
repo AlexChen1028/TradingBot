@@ -20,6 +20,7 @@ LEADERBOARD_INTERVAL = 60 * 60      # 每小時發漲跌幅榜
 MIN_SIGNALS           = 3   # 一般掃描門檻（2026-05-23 KOL: 提高至3+，降低假突破頻率）
 MIN_LEADERBOARD_SIGNALS = 2   # 漲跌幅榜幣種（寬鬆）
 LEADERBOARD_MIN_PCT   = 4.0  # 24h 漲跌超過 4% 才考慮（2026-05-23 KOL: 震盪雜訊多→提高至4%）
+SHORT_BIAS            = True  # 2026-05-25 KOL: 三方共識大級別偏空（弱勢反彈），LONG 需額外 +1 信號
 LEADERBOARD_TOP_N     = 5    # 漲幅/跌幅各取前幾名
 MAX_POSITIONS  = 999    # 無上限（原3→5）
 MARGIN_USDT         = 60    # 預設保證金（fallback）
@@ -1073,6 +1074,9 @@ def scan_leaderboard(exchange_pub, exchange_priv, candidates, positions, market_
         if lb_direction == 1 and get_btc_kol_gate(exchange_pub).get('fake_breakout'):
             print(f"  ⚠️ KOL: BTC 假突破風險，跳過 {symbol.split('/')[0]} 漲幅榜做多")
             continue
+        if lb_direction == 1 and SHORT_BIAS and result['n'] < MIN_LEADERBOARD_SIGNALS + 1:
+            print(f"  📉 SHORT_BIAS: {symbol.split('/')[0]} 漲幅榜 LONG 信號不足（需 {MIN_LEADERBOARD_SIGNALS+1}，有 {result['n']}），跳過")
+            continue
         if result['n'] >= MIN_LEADERBOARD_SIGNALS:
             sym_name = symbol.split('/')[0]
             dir_str  = '做多' if lb_direction == 1 else '做空'
@@ -1094,9 +1098,13 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             continue
         result = analyze_dispatch(exchange_pub, symbol)
         # BTC飛揚：週末量能萎縮，主流幣門檻提高 1
+        # 2026-05-25 KOL SHORT_BIAS：三方共識大級別偏空，LONG 需額外 +1 信號
         min_sig = MIN_SIGNALS + (1 if result and result.get('weekend') else 0)
         if result and result['n'] >= min_sig:
             d = result['direction']
+            if d == 1 and SHORT_BIAS and result['n'] < min_sig + 1:
+                print(f"  📉 SHORT_BIAS: {symbol.split('/')[0]} LONG 信號不足（需 {min_sig+1}，有 {result['n']}），跳過")
+                continue
             if d == 1 and result.get('rsi', 50) >= 80:
                 continue  # RSI 超買，跳過做多
             if d == -1 and result.get('rsi', 50) <= 20:
