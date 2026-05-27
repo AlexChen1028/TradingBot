@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-27 +08
+> Last updated: 2026-05-27 23:30 +08
 
 ---
 
@@ -392,6 +392,15 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-05-27（二輪更新）
+- `main.py`：依 2026-05-27 KOL 統整（12支影片）再次收窄區間
+  - `KEY_RESISTANCE_ZONE`: `(77000, 78500)` → `(77000, 78000)`（三天連續共識，STH 成本線 77,700）
+  - `KEY_SUPPORT_ZONE`: `(75000, 76000)` → `(75000, 75500)`（飛揚/歐陽多頭最後防線）
+- `monitor_coins.py`：
+  - `analyze_major()` Signal 9 `squeeze_fuel` **停用**：FR 已回歸正常水位（~0.01%），加密龐克要求回歸傳統量價分析
+  - 新增 `COIN_BLACKLIST = {'CHZ'}`：世界盃買預期賣事實已兌現，BTC歐陽禁止做多
+  - 一般掃描 + 漲跌幅榜：黑名單幣種的 LONG 信號直接跳過
 
 ### 2026-05-27
 - `main.py`：依 `notes/youtube-insights.md` 2026-05-25 更新（7支影片 5/22~5/24）調整 KOL 共識區間
