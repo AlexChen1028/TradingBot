@@ -69,12 +69,12 @@ MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：
 DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
 CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
-# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-05-25 更新）─────────────
+# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-05-31 更新）─────────────
 # 三個 KOL 交集的靜態 Zone，每輪 KOL 更新後手動調整。
-# KEY_SUPPORT_ZONE    : 三方支撐共識（75,000~76,000；多頭最後防線，跌破 75,000 入下跌真空）
-# KEY_RESISTANCE_ZONE : 三方壓力共識（77,000~78,500；STH 成本線 78,100；強壓，分批建空上限）
-KEY_SUPPORT_ZONE    = (75_000, 75_500)   # 2026-05-27 三方支撐共識（飛揚/歐陽：多頭最後防線）
-KEY_RESISTANCE_ZONE = (77_000, 78_000)   # 2026-05-27 三方壓力共識（連三天共識，STH 成本線 77,700）
+# KEY_SUPPORT_ZONE    : 三方支撐共識（72,250~73,000；74,000 跌破後下方強支撐）
+# KEY_RESISTANCE_ZONE : 三方壓力共識（74,000~75,000；大幅下移，反彈至此高空）
+KEY_SUPPORT_ZONE    = (72_250, 73_000)   # 2026-05-31 三方支撐共識（跌破 74,000 下看此區）
+KEY_RESISTANCE_ZONE = (74_000, 75_000)   # 2026-05-31 三方壓力共識（大幅下移，多空分界 74,000）
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
