@@ -845,6 +845,65 @@ def close_pos(exchange, symbol, positions, reason):
         print(f"  ❌ 平倉失敗 {symbol}: {e}")
 
 # ── 倉位檢查 ──────────────────────────────────────────────────────────────────
+def _sync_sl_tp(exchange, symbol, pos, positions):
+    """檢查交易所 SL/TP 訂單是否還活著，若已失效則自動補掛。"""
+    is_major = symbol in set(WATCH_ALWAYS)
+    sl_pct   = MAJOR_SL_PCT if is_major else STOP_LOSS_PCT
+    tp_pct   = MAJOR_TP_PCT if is_major else TP_PCT
+    d        = pos['direction']
+    ep       = pos['entry_price']
+    amt      = pos['amount']
+    sl_side  = 'sell' if d == 1 else 'buy'
+    changed  = False
+
+    def _order_live(oid):
+        if not oid:
+            return False
+        try:
+            o = exchange.fetch_order(oid, symbol)
+            return o.get('status') in ('open', 'new')
+        except Exception:
+            return False
+
+    # SL 訂單（考慮保本狀態）
+    if not _order_live(pos.get('sl_order_id')):
+        try:
+            if pos.get('breakeven'):
+                stop_px = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
+                label   = 'SL(保本)'
+            else:
+                stop_px = round(ep * (1 - sl_pct) if d == 1 else ep * (1 + sl_pct), 8)
+                label   = f'SL {sl_pct:.1%}'
+            new_ord = exchange.create_order(symbol, 'stop_market', sl_side, amt, None, {
+                'stopPrice': stop_px, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            positions[symbol]['sl_order_id'] = new_ord['id']
+            changed = True
+            coin = symbol.split('/')[0]
+            print(f"  🔄 {coin} {label} 補掛 @ {stop_px:.6g}")
+            tg(f"⚠️ <b>SL 補掛</b> {coin}\n{label} @ {stop_px:.6g}（原訂單已失效）")
+        except Exception as e:
+            print(f"  ⚠️ {symbol} SL 補掛失敗: {e}")
+
+    # TP 訂單
+    if not _order_live(pos.get('tp_order_id')):
+        try:
+            stop_px = round(ep * (1 + tp_pct) if d == 1 else ep * (1 - tp_pct), 4)
+            new_ord = exchange.create_order(symbol, 'take_profit_market', sl_side, amt, None, {
+                'stopPrice': stop_px, 'closePosition': True, 'workingType': 'MARK_PRICE',
+            })
+            positions[symbol]['tp_order_id'] = new_ord['id']
+            changed = True
+            coin = symbol.split('/')[0]
+            print(f"  🔄 {coin} TP {tp_pct:.0%} 補掛 @ {stop_px:.6g}")
+            tg(f"⚠️ <b>TP 補掛</b> {coin}\nTP {tp_pct:.0%} @ {stop_px:.6g}（原訂單已失效）")
+        except Exception as e:
+            print(f"  ⚠️ {symbol} TP 補掛失敗: {e}")
+
+    if changed:
+        save_positions(positions)
+
+
 def check_positions(exchange, positions):
     now = now8()
     for symbol in list(positions.keys()):
@@ -886,6 +945,9 @@ def check_positions(exchange, positions):
             except Exception:
                 pass
 
+            # SL/TP 訂單健康檢查：若交易所訂單已失效則補掛
+            _sync_sl_tp(exchange, symbol, pos, positions)
+
             if d == 1:
                 positions[symbol]['peak_price'] = max(pos['peak_price'], price)
             else:
@@ -917,12 +979,17 @@ def check_positions(exchange, positions):
                 except Exception as e:
                     print(f"  ⚠️ 保本止損失敗 {symbol}: {e}")
 
-            sl      = (price < ep * (1 - STOP_LOSS_PCT)) if d == 1 else (price > ep * (1 + STOP_LOSS_PCT))
+            _is_major = symbol in set(WATCH_ALWAYS)
+            _sl_pct   = MAJOR_SL_PCT if _is_major else STOP_LOSS_PCT
+            _tp_pct   = MAJOR_TP_PCT if _is_major else TP_PCT
+
+            sl      = (price < ep * (1 - _sl_pct)) if d == 1 else (price > ep * (1 + _sl_pct))
+            tp_sw   = (price > ep * (1 + _tp_pct)) if d == 1 else (price < ep * (1 - _tp_pct))
             trail   = (price < peak * (1 - TRAILING_PCT)) if d == 1 else (price > peak * (1 + TRAILING_PCT))
             timeout = held_h >= MAX_HOLD_HOURS
 
-            if sl or trail or timeout:
-                reason = '止損' if sl else ('追蹤止盈備援' if trail else '超時平倉')
+            if sl or tp_sw or trail or timeout:
+                reason = '止損' if sl else ('軟體止盈' if tp_sw else ('追蹤止盈備援' if trail else '超時平倉'))
                 close_pos(exchange, symbol, positions, reason)
         except Exception as e:
             print(f"  ⚠️ 檢查倉位 {symbol} 失敗: {e}")
@@ -1148,6 +1215,9 @@ def main():
     print("=" * 60)
 
     positions        = load_positions()
+    if positions:
+        print(f"  ▶ 啟動掃描：檢查 {len(positions)} 個既有倉位的 SL/TP 狀態…")
+        check_positions(exchange_priv, positions)
     watch_coins      = get_top_coins(exchange_pub)
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次

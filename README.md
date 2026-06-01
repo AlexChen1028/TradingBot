@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-05-31 21:00 +08
+> Last updated: 2026-06-01 20:00 +08
 
 ---
 
@@ -392,6 +392,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-01
+- `monitor_coins.py`：修復 SL/TP 三個 bug
+  - Bug 1：軟體備援 SL 對主流幣（BTC/ETH/SOL）錯用 3.5%，改為正確的 `MAJOR_SL_PCT`（1%）
+  - Bug 2：新增軟體備援 TP 檢查（`tp_sw`），交易所 TP 訂單失效時由軟體兜底
+  - Bug 3：新增 `_sync_sl_tp()` — 每次 `check_positions` 時驗證交易所 SL/TP 訂單存活，失效自動補掛
+  - 啟動時若有既有倉位，立刻執行一次 `check_positions` 確認狀態
 
 ### 2026-05-31
 - `main.py`：依 2026-05-31 KOL 統整（13支影片 5/28~5/31）大幅下移 KOL 共識區間
