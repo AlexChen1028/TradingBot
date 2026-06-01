@@ -47,6 +47,21 @@ TAKER_FEE           = 0.0005  # Binance futures taker fee 0.05%
 NEWS_SEEN_FILE      = 'news_seen.json'
 STATS_FROM          = os.getenv('STATS_FROM', '')  # e.g. '2026-05-16' — ignore trades before this date
 
+# 雙向持倉模式（Hedge Mode）偵測 — 在 main() 啟動時設定
+_HEDGE_MODE = False
+
+def _open_params(direction):
+    """開倉訂單 params：Hedge mode 帶 positionSide，否則不帶。"""
+    if _HEDGE_MODE:
+        return {'positionSide': 'LONG' if direction == 1 else 'SHORT'}
+    return {}
+
+def _close_params(direction):
+    """平倉/SL/TP 訂單 params：Hedge mode 用 positionSide，One-way 用 reduceOnly。"""
+    if _HEDGE_MODE:
+        return {'positionSide': 'LONG' if direction == 1 else 'SHORT'}
+    return {'reduceOnly': True}
+
 # 重大新聞偵測：含以下關鍵字才考慮
 NEWS_KEYWORDS = [
     'crash', 'plunge', 'surge', 'rally', 'hack', 'exploit', 'breach', 'stolen',
@@ -702,7 +717,7 @@ def _enter_position(exchange, symbol, direction, amount):
             else ref_price * (1 + LIMIT_SLIPPAGE), 8
         )
         side  = 'buy' if direction == 1 else 'sell'
-        order = exchange.create_limit_order(symbol, side, amount, limit_price)
+        order = exchange.create_limit_order(symbol, side, amount, limit_price, params=_open_params(direction))
         oid   = order['id']
         print(f"  📋 限價單 {limit_price:.6g} 掛出，等待成交…")
 
@@ -725,11 +740,10 @@ def _enter_position(exchange, symbol, direction, amount):
     except Exception as e:
         print(f"  ⚠️ 限價單失敗 ({e})，改市價")
 
-    side = 'buy' if direction == 1 else 'sell'
     if direction == 1:
-        exchange.create_market_buy_order(symbol, amount)
+        exchange.create_market_buy_order(symbol, amount, params=_open_params(direction))
     else:
-        exchange.create_market_sell_order(symbol, amount)
+        exchange.create_market_sell_order(symbol, amount, params=_open_params(direction))
     return float(exchange.fetch_ticker(symbol)['last'])
 
 
@@ -771,7 +785,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
                 price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
             )
             sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
-                'stopPrice': sl_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': sl_price, 'workingType': 'MARK_PRICE', **_close_params(direction),
             })
             sl_id = sl_order['id']
             print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛")
@@ -785,7 +799,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
                 price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
             )
             tp_order = exchange.create_order(symbol, 'take_profit_market', sl_side, amount, None, {
-                'stopPrice': tp_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': tp_price, 'workingType': 'MARK_PRICE', **_close_params(direction),
             })
             tp_id = tp_order['id']
         except Exception as e:
@@ -838,10 +852,10 @@ def close_pos(exchange, symbol, positions, reason):
         close_fn = exchange.create_market_sell_order if d == 1 else exchange.create_market_buy_order
 
         try:
-            close_fn(symbol, amt, params={'reduceOnly': True})
+            close_fn(symbol, amt, params=_close_params(d))
         except Exception as e1:
-            # reduceOnly 失敗：查詢交易所實際倉位大小
-            print(f"  ⚠️ reduceOnly 失敗 ({e1})，查詢交易所實際倉位…")
+            # 第一次失敗：查詢交易所實際倉位大小，用實際數量重試
+            print(f"  ⚠️ 平倉失敗 ({e1})，查詢交易所實際倉位…")
             try:
                 ex_pos = exchange.fetch_positions([symbol])
                 ex_amt = next(
@@ -849,12 +863,12 @@ def close_pos(exchange, symbol, positions, reason):
                      for p in ex_pos if p.get('symbol') == symbol), 0
                 )
             except Exception:
-                ex_amt = amt  # 查不到就繼續用原始數量
+                ex_amt = amt
 
             if ex_amt > 0:
-                # 用實際數量重試，不帶 reduceOnly
+                # 用實際數量重試，不帶任何 reduceOnly/positionSide 限制
                 close_fn(symbol, ex_amt)
-                amt = ex_amt  # 更新為實際平倉數量
+                amt = ex_amt
             else:
                 # 交易所無此倉位（已被手動平/SL/TP 觸發/清算）
                 coin = symbol.split('/')[0]
@@ -921,7 +935,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
                 stop_px = round(ep * (1 - sl_pct) if d == 1 else ep * (1 + sl_pct), 8)
                 label   = f'SL {sl_pct:.1%}'
             new_ord = exchange.create_order(symbol, 'stop_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
             })
             positions[symbol]['sl_order_id'] = new_ord['id']
             changed = True
@@ -936,7 +950,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
         try:
             stop_px = round(ep * (1 + tp_pct) if d == 1 else ep * (1 - tp_pct), 4)
             new_ord = exchange.create_order(symbol, 'take_profit_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
             })
             positions[symbol]['tp_order_id'] = new_ord['id']
             changed = True
@@ -1014,7 +1028,7 @@ def check_positions(exchange, positions):
                         except Exception: pass
                     be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
                     be_order = exchange.create_order(symbol, 'stop_market', sl_side, pos['amount'], None, {
-                        'stopPrice': be_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
+                        'stopPrice': be_price, 'workingType': 'MARK_PRICE', **_close_params(d),
                     })
                     positions[symbol]['sl_order_id'] = be_order['id']
                     positions[symbol]['breakeven']   = True
@@ -1243,6 +1257,18 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             open_pos(exchange_priv, symbol, d, positions, result['n'])
         time.sleep(0.15)
 
+def _detect_hedge_mode(exchange):
+    global _HEDGE_MODE
+    try:
+        resp = exchange.fapiPrivateGetPositionSideDual()
+        _HEDGE_MODE = bool(resp.get('dualSidePosition', False))
+    except Exception as e:
+        print(f"  ⚠️ 無法偵測持倉模式（{e}），預設單向持倉")
+        _HEDGE_MODE = False
+    mode = '雙向持倉 Hedge Mode ⚠️' if _HEDGE_MODE else '單向持倉 One-way ✅'
+    print(f"  持倉模式：{mode}")
+
+
 def main():
     exchange_pub  = ccxt.binance({'enableRateLimit': True})
     exchange_priv = ccxt.binance({
@@ -1252,6 +1278,7 @@ def main():
         'options':         {'defaultType': 'future'},
     })
     exchange_priv.enable_demo_trading(True)
+    _detect_hedge_mode(exchange_priv)
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")

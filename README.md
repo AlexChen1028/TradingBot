@@ -393,6 +393,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 
 ## Changelog
 
+### 2026-06-02（三輪更新）
+- `monitor_coins.py`：全面支援 Binance 雙向持倉模式（Hedge Mode）
+  - 啟動時自動偵測持倉模式（`_detect_hedge_mode`），印出單向/雙向確認
+  - 新增 `_open_params(direction)` / `_close_params(direction)` helper
+  - Hedge mode：所有訂單改用 `positionSide: LONG/SHORT`；One-way：維持 `reduceOnly: True`
+  - 涵蓋：開倉、SL、TP、保本止損、平倉所有下單路徑
+
 ### 2026-06-02（二輪更新）
 - `monitor_coins.py`：找到 SL/TP 從未成功掛單的根本原因並修復
   - **根本 bug**：`closePosition: True` 和 `quantity` 同時送出 → Binance 拒絕（"Quantity and closePosition can not be sent together"）
