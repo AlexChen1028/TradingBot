@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-01 23:35 +08
+> Last updated: 2026-06-02 07:30 +08
 
 ---
 
@@ -392,6 +392,12 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-02
+- `monitor_coins.py`：修復 `close_pos` 平倉失敗後靜默退出的 bug
+  - `reduceOnly: True` 失敗時：查詢交易所實際倉位大小，用實際數量重試（不帶 reduceOnly）
+  - 若交易所已無此倉位（已手動平/SL/TP/清算）：清除本地 JSON 記錄，發 Telegram 通知
+  - 修正 P&L 槓桿倍數：主流幣改用 `MAJOR_LEVERAGE (50x)`，不再誤用 altcoin 的 20x
 
 ### 2026-06-01（二輪更新）
 - `main.py`：依 2026-06-01 KOL 統整（76 個來源）微調支撐區下沿

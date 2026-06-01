@@ -807,6 +807,10 @@ def close_pos(exchange, symbol, positions, reason):
     if not pos:
         return
     try:
+        d   = pos['direction']
+        amt = pos['amount']
+        ep  = pos['entry_price']
+
         # 取消交易所止損/止盈掛單
         for key in ('sl_order_id', 'tp_order_id'):
             oid = pos.get(key)
@@ -816,20 +820,47 @@ def close_pos(exchange, symbol, positions, reason):
                 except Exception:
                     pass
 
-        amt = pos['amount']
-        if pos['direction'] == 1:
-            exchange.create_market_sell_order(symbol, amt, params={'reduceOnly': True})
-        else:
-            exchange.create_market_buy_order(symbol, amt, params={'reduceOnly': True})
+        close_fn = exchange.create_market_sell_order if d == 1 else exchange.create_market_buy_order
 
-        price     = float(exchange.fetch_ticker(symbol)['last'])
-        ep        = pos['entry_price']
-        pnl_pct   = (price - ep) / ep * pos['direction'] * 100 * LEVERAGE
-        pnl_usdt  = amt * (price - ep) * pos['direction']
-        fee_usdt  = amt * (ep + price) * TAKER_FEE
-        net_usdt  = pnl_usdt - fee_usdt
-        side      = 'LONG' if pos['direction'] == 1 else 'SHORT'
-        coin      = symbol.split('/')[0]
+        try:
+            close_fn(symbol, amt, params={'reduceOnly': True})
+        except Exception as e1:
+            # reduceOnly 失敗：查詢交易所實際倉位大小
+            print(f"  ⚠️ reduceOnly 失敗 ({e1})，查詢交易所實際倉位…")
+            try:
+                ex_pos = exchange.fetch_positions([symbol])
+                ex_amt = next(
+                    (abs(p.get('contracts') or 0)
+                     for p in ex_pos if p.get('symbol') == symbol), 0
+                )
+            except Exception:
+                ex_amt = amt  # 查不到就繼續用原始數量
+
+            if ex_amt > 0:
+                # 用實際數量重試，不帶 reduceOnly
+                close_fn(symbol, ex_amt)
+                amt = ex_amt  # 更新為實際平倉數量
+            else:
+                # 交易所無此倉位（已被手動平/SL/TP 觸發/清算）
+                coin = symbol.split('/')[0]
+                side = 'LONG' if d == 1 else 'SHORT'
+                price_now = float(exchange.fetch_ticker(symbol)['last'])
+                print(f"  ℹ️ {coin} 交易所無倉位，清除本地記錄 | {reason}")
+                tg(f"ℹ️ <b>{side} {coin} 本地記錄清除</b>\n交易所已無對應倉位（手動平/SL/TP/清算）\n原因：{reason}")
+                log_altcoin_trade(symbol, d, ep, price_now, amt, pos.get('entry_time', ''), reason, pos.get('margin_usdt'))
+                del positions[symbol]
+                save_positions(positions)
+                return
+
+        price    = float(exchange.fetch_ticker(symbol)['last'])
+        is_major = symbol in set(WATCH_ALWAYS)
+        lev      = MAJOR_LEVERAGE if is_major else LEVERAGE
+        pnl_pct  = (price - ep) / ep * d * 100 * lev
+        pnl_usdt = amt * (price - ep) * d
+        fee_usdt = amt * (ep + price) * TAKER_FEE
+        net_usdt = pnl_usdt - fee_usdt
+        side     = 'LONG' if d == 1 else 'SHORT'
+        coin     = symbol.split('/')[0]
         print(f"  🔒 平倉 {side} {coin} | 淨利 {net_usdt:+.2f} U (費 {fee_usdt:.2f} U) | {reason}")
         tg(
             f"🔒 <b>平倉 {side} {coin}</b>\n"
@@ -838,7 +869,7 @@ def close_pos(exchange, symbol, positions, reason):
             f"毛利：{pnl_usdt:+.2f} U  手續費：-{fee_usdt:.2f} U\n"
             f"<b>淨利：{net_usdt:+.2f} U</b>  原因：{reason}"
         )
-        log_altcoin_trade(symbol, pos['direction'], ep, price, amt, pos.get('entry_time', ''), reason, pos.get('margin_usdt'))
+        log_altcoin_trade(symbol, d, ep, price, amt, pos.get('entry_time', ''), reason, pos.get('margin_usdt'))
         del positions[symbol]
         save_positions(positions)
     except Exception as e:
