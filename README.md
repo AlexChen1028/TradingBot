@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-02 07:30 +08
+> Last updated: 2026-06-02 09:00 +08
 
 ---
 
@@ -392,6 +392,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-02（二輪更新）
+- `monitor_coins.py`：找到 SL/TP 從未成功掛單的根本原因並修復
+  - **根本 bug**：`closePosition: True` 和 `quantity` 同時送出 → Binance 拒絕（"Quantity and closePosition can not be sent together"）
+  - 修復：所有 SL/TP/保本止損掛單改用 `reduceOnly: True`（相容 isolated 和 cross margin）
+  - `set_margin_mode` 加 `-4046` 容錯：已是 isolated 不再整個 bail，改繼續執行
+  - 開倉時 SL/TP 失敗加 Telegram 即時通知（不再只 print）
 
 ### 2026-06-02
 - `monitor_coins.py`：修復 `close_pos` 平倉失敗後靜默退出的 bug

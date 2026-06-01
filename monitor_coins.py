@@ -741,8 +741,20 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         tp_pct    = MAJOR_TP_PCT    if is_major else TP_PCT
         coin_type = '主流' if is_major else '山寨'
 
-        exchange.set_margin_mode('isolated', symbol)
-        exchange.set_leverage(lev, symbol, params={'marginMode': 'isolated'})
+        try:
+            exchange.set_margin_mode('isolated', symbol)
+        except Exception as e:
+            if '-4046' in str(e) or 'No need to change' in str(e).lower():
+                pass  # 已是 isolated，繼續
+            else:
+                raise
+        try:
+            exchange.set_leverage(lev, symbol, params={'marginMode': 'isolated'})
+        except Exception as e:
+            if 'leverage not modified' in str(e).lower() or '-4046' in str(e):
+                pass  # 槓桿已正確，繼續
+            else:
+                raise
         ref_price = float(exchange.fetch_ticker(symbol)['last'])
         margin    = MARGIN_BY_SIGNALS.get(n_signals, MARGIN_USDT)
         amount    = round(margin * lev / ref_price, 4)
@@ -751,19 +763,21 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         price = _enter_position(exchange, symbol, direction, amount)
 
         sl_id = tp_id = None
+        coin = symbol.split('/')[0]
 
-        # 固定止損（STOP_MARKET）
+        # 固定止損（STOP_MARKET）— 用 reduceOnly 取代 closePosition，避免 Binance 拒絕 qty+closePosition 衝突
         try:
             sl_price = round(
                 price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
             )
             sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
-                'stopPrice': sl_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': sl_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
             })
             sl_id = sl_order['id']
             print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛")
         except Exception as e:
             print(f"  ❌ 止損訂單失敗 {symbol}: {e}")
+            tg(f"⚠️ <b>止損掛單失敗</b> {coin}\n{e}\n倉位已開但<b>無交易所止損保護</b>！")
 
         # 固定止盈天花板（TAKE_PROFIT_MARKET）
         try:
@@ -771,11 +785,12 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
                 price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
             )
             tp_order = exchange.create_order(symbol, 'take_profit_market', sl_side, amount, None, {
-                'stopPrice': tp_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': tp_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
             })
             tp_id = tp_order['id']
         except Exception as e:
             print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
+            tg(f"⚠️ <b>止盈掛單失敗</b> {coin}\n{e}\n軟體備援止盈仍有效")
 
         positions[symbol] = {
             'direction':   direction,
@@ -906,7 +921,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
                 stop_px = round(ep * (1 - sl_pct) if d == 1 else ep * (1 + sl_pct), 8)
                 label   = f'SL {sl_pct:.1%}'
             new_ord = exchange.create_order(symbol, 'stop_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': stop_px, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
             })
             positions[symbol]['sl_order_id'] = new_ord['id']
             changed = True
@@ -921,7 +936,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
         try:
             stop_px = round(ep * (1 + tp_pct) if d == 1 else ep * (1 - tp_pct), 4)
             new_ord = exchange.create_order(symbol, 'take_profit_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                'stopPrice': stop_px, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
             })
             positions[symbol]['tp_order_id'] = new_ord['id']
             changed = True
@@ -999,7 +1014,7 @@ def check_positions(exchange, positions):
                         except Exception: pass
                     be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
                     be_order = exchange.create_order(symbol, 'stop_market', sl_side, pos['amount'], None, {
-                        'stopPrice': be_price, 'closePosition': True, 'workingType': 'MARK_PRICE',
+                        'stopPrice': be_price, 'reduceOnly': True, 'workingType': 'MARK_PRICE',
                     })
                     positions[symbol]['sl_order_id'] = be_order['id']
                     positions[symbol]['breakeven']   = True
