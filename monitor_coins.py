@@ -57,10 +57,10 @@ def _open_params(direction):
     return {}
 
 def _close_params(direction):
-    """平倉/SL/TP 訂單 params：Hedge mode 用 positionSide，One-way 用 reduceOnly。"""
+    """平倉/SL/TP 訂單 params：Hedge mode 用 positionSide，One-way 不帶額外 params。"""
     if _HEDGE_MODE:
         return {'positionSide': 'LONG' if direction == 1 else 'SHORT'}
-    return {'reduceOnly': True}
+    return {}
 
 # 重大新聞偵測：含以下關鍵字才考慮
 NEWS_KEYWORDS = [
