@@ -10,9 +10,6 @@ VPS 上跑法：
 
 import os, sys, json, time, argparse
 import ccxt
-from dotenv import load_dotenv
-
-load_dotenv()
 
 WATCH_ALWAYS  = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
 TAKER_FEE     = 0.0005
