@@ -779,7 +779,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         sl_id = tp_id = None
         coin = symbol.split('/')[0]
 
-        # 固定止損（STOP_MARKET）— 用 reduceOnly 取代 closePosition，避免 Binance 拒絕 qty+closePosition 衝突
+        # 固定止損（STOP_MARKET）— 僅帶 stopPrice + workingType，one-way 不需額外 params
         try:
             sl_price = round(
                 price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
@@ -996,7 +996,8 @@ def check_positions(exchange, positions):
                     pnl_usdt = amt * (price - ep) * d
                     fee_usdt = amt * (ep + price) * TAKER_FEE
                     net_usdt = pnl_usdt - fee_usdt
-                    pnl_pct  = (price - ep) / ep * d * 100 * LEVERAGE
+                    _lev     = MAJOR_LEVERAGE if symbol in set(WATCH_ALWAYS) else LEVERAGE
+                    pnl_pct  = (price - ep) / ep * d * 100 * _lev
                     side     = 'LONG' if d == 1 else 'SHORT'
                     coin     = symbol.split('/')[0]
                     trigger  = '🎯 止盈' if pnl_usdt > 0 else '🛑 止損'
