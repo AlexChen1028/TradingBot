@@ -916,6 +916,17 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
     sl_side  = 'sell' if d == 1 else 'buy'
     changed  = False
 
+    # 先確認交易所倉位仍存在，若已平倉則跳過補掛（避免對空倉無限掛單）
+    try:
+        ex_pos = exchange.fetch_positions([symbol])
+        ex_amt = next(
+            (abs(p.get('contracts') or 0) for p in ex_pos if p.get('symbol') == symbol), 0
+        )
+        if ex_amt == 0:
+            return  # 倉位不存在，由 check_positions 主流程負責清理 JSON
+    except Exception:
+        pass  # 查詢失敗時保守繼續（避免遺漏真正需要補掛的情況）
+
     def _order_live(oid):
         if not oid:
             return False
