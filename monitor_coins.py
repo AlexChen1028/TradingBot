@@ -755,11 +755,20 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         tp_pct    = MAJOR_TP_PCT    if is_major else TP_PCT
         coin_type = '主流' if is_major else '山寨'
 
+        # 清除此 symbol 所有殘留掛單，避免 -4067 阻礙 set_margin_mode
+        try:
+            stale = exchange.fetch_open_orders(symbol)
+            for o in stale:
+                try: exchange.cancel_order(o['id'], symbol)
+                except Exception: pass
+        except Exception:
+            pass
+
         try:
             exchange.set_margin_mode('isolated', symbol)
         except Exception as e:
-            if '-4046' in str(e) or 'No need to change' in str(e).lower():
-                pass  # 已是 isolated，繼續
+            if '-4046' in str(e) or '-4067' in str(e) or 'No need to change' in str(e).lower():
+                pass  # 已是 isolated 或有殘留掛單擋住，繼續
             else:
                 raise
         try:
@@ -840,14 +849,14 @@ def close_pos(exchange, symbol, positions, reason):
         amt = pos['amount']
         ep  = pos['entry_price']
 
-        # 取消交易所止損/止盈掛單
-        for key in ('sl_order_id', 'tp_order_id'):
-            oid = pos.get(key)
-            if oid:
-                try:
-                    exchange.cancel_order(oid, symbol)
-                except Exception:
-                    pass
+        # 取消此 symbol 所有掛單（含殘留的 SL/TP，避免 -4045 超上限）
+        try:
+            open_orders = exchange.fetch_open_orders(symbol)
+            for o in open_orders:
+                try: exchange.cancel_order(o['id'], symbol)
+                except Exception: pass
+        except Exception:
+            pass
 
         close_fn = exchange.create_market_sell_order if d == 1 else exchange.create_market_buy_order
 
