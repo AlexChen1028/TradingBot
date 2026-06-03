@@ -1017,6 +1017,11 @@ def check_positions(exchange, positions):
                     for p in ex_pos if p.get('symbol') == symbol
                 )
                 if not still_open:
+                    # 清除此 symbol 所有殘留條件掛單（SL/TP 其中一張觸發後，另一張會殘留）
+                    try:
+                        exchange.cancel_all_orders(symbol)
+                    except Exception:
+                        pass
                     ep       = pos['entry_price']
                     amt      = pos['amount']
                     pnl_usdt = amt * (price - ep) * d
