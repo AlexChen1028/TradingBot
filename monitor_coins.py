@@ -935,9 +935,11 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
             return False
         try:
             o = exchange.fetch_order(oid, symbol)
-            return o.get('status') in ('open', 'new')
+            # 明確死亡狀態才補掛；其餘（含 open/new/unknown）視為仍活著
+            return o.get('status') not in ('canceled', 'expired', 'rejected', 'closed', 'filled')
         except Exception:
-            return False
+            # 查詢失敗（demo 對條件委託常拋 exception）→ 保守視為仍活著，避免無限補掛
+            return True
 
     sl_live = _order_live(pos.get('sl_order_id'))
     tp_live = _order_live(pos.get('tp_order_id'))
