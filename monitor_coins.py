@@ -757,10 +757,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
 
         # 清除此 symbol 所有殘留掛單，避免 -4067 阻礙 set_margin_mode
         try:
-            stale = exchange.fetch_open_orders(symbol)
-            for o in stale:
-                try: exchange.cancel_order(o['id'], symbol)
-                except Exception: pass
+            exchange.cancel_all_orders(symbol)
         except Exception:
             pass
 
@@ -851,10 +848,7 @@ def close_pos(exchange, symbol, positions, reason):
 
         # 取消此 symbol 所有掛單（含殘留的 SL/TP，避免 -4045 超上限）
         try:
-            open_orders = exchange.fetch_open_orders(symbol)
-            for o in open_orders:
-                try: exchange.cancel_order(o['id'], symbol)
-                except Exception: pass
+            exchange.cancel_all_orders(symbol)
         except Exception:
             pass
 
@@ -953,10 +947,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
 
     # 有任一需要補掛：先清除此 symbol 所有殘留掛單，避免 -4045 堆積
     try:
-        stale = exchange.fetch_open_orders(symbol)
-        for o in stale:
-            try: exchange.cancel_order(o['id'], symbol)
-            except Exception: pass
+        exchange.cancel_all_orders(symbol)
     except Exception:
         pass
 
