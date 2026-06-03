@@ -945,8 +945,23 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
         except Exception:
             return False
 
+    sl_live = _order_live(pos.get('sl_order_id'))
+    tp_live = _order_live(pos.get('tp_order_id'))
+
+    if sl_live and tp_live:
+        return  # 兩個都健在，不需補掛
+
+    # 有任一需要補掛：先清除此 symbol 所有殘留掛單，避免 -4045 堆積
+    try:
+        stale = exchange.fetch_open_orders(symbol)
+        for o in stale:
+            try: exchange.cancel_order(o['id'], symbol)
+            except Exception: pass
+    except Exception:
+        pass
+
     # SL 訂單（考慮保本狀態）
-    if not _order_live(pos.get('sl_order_id')):
+    if not sl_live:
         try:
             if pos.get('breakeven'):
                 stop_px = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
@@ -966,7 +981,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
             print(f"  ⚠️ {symbol} SL 補掛失敗: {e}")
 
     # TP 訂單
-    if not _order_live(pos.get('tp_order_id')):
+    if not tp_live:
         try:
             stop_px = round(ep * (1 + tp_pct) if d == 1 else ep * (1 - tp_pct), 4)
             new_ord = exchange.create_order(symbol, 'take_profit_market', sl_side, amt, None, {
