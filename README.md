@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-03 03:30 +08
+> Last updated: 2026-06-03 22:15 +08
 
 ---
 
@@ -101,6 +101,9 @@ Gaps currently noted (see notes file):
 **Entry filters (every scan):**
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
+- `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
+- `near_support` gate: when BTC ≤ 66,600 (near 65K–66K whale zone), altcoin SHORT entries are skipped (2026-06-03 KOL: 追空禁令)
+- `COIN_BLACKLIST`: CHZ, ORDI, WLD — LONG blocked entirely
 
 **Macro filter (hourly):**
 - Fetches BTC 24h change + SPY / QQQ daily return
