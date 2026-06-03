@@ -812,6 +812,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
             print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
             tg(f"⚠️ <b>止盈掛單失敗</b> {coin}\n{e}\n軟體備援止盈仍有效")
 
+        now_ts = time.time()
         positions[symbol] = {
             'direction':   direction,
             'entry_price': price,
@@ -821,6 +822,8 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
             'margin_usdt': margin,
             'sl_order_id': sl_id,
             'tp_order_id': tp_id,
+            'sl_placed_at': now_ts if sl_id else 0,
+            'tp_placed_at': now_ts if tp_id else 0,
         }
         save_positions(positions)
         side = 'LONG' if direction == 1 else 'SHORT'
@@ -930,19 +933,20 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
     except Exception:
         pass  # 查詢失敗時保守繼續（避免遺漏真正需要補掛的情況）
 
-    def _order_live(oid):
+    def _order_live(oid, placed_ts):
         if not oid:
             return False
+        # 剛補掛不久（< SCAN_INTERVAL）→ 不重新查詢，直接視為仍活著
+        if placed_ts and (time.time() - placed_ts) < SCAN_INTERVAL:
+            return True
         try:
             o = exchange.fetch_order(oid, symbol)
-            # 明確死亡狀態才補掛；其餘（含 open/new/unknown）視為仍活著
-            return o.get('status') not in ('canceled', 'expired', 'rejected', 'closed', 'filled')
+            return o.get('status') not in ('canceled', 'expired', 'rejected')
         except Exception:
-            # 查詢失敗（demo 對條件委託常拋 exception）→ 保守視為仍活著，避免無限補掛
-            return True
+            return True  # 查詢失敗 → 保守視為仍活著
 
-    sl_live = _order_live(pos.get('sl_order_id'))
-    tp_live = _order_live(pos.get('tp_order_id'))
+    sl_live = _order_live(pos.get('sl_order_id'), pos.get('sl_placed_at', 0))
+    tp_live = _order_live(pos.get('tp_order_id'), pos.get('tp_placed_at', 0))
 
     if sl_live and tp_live:
         return  # 兩個都健在，不需補掛
@@ -966,6 +970,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
                 'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
             })
             positions[symbol]['sl_order_id'] = new_ord['id']
+            positions[symbol]['sl_placed_at'] = time.time()
             changed = True
             coin = symbol.split('/')[0]
             print(f"  🔄 {coin} {label} 補掛 @ {stop_px:.6g}")
@@ -981,6 +986,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
                 'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
             })
             positions[symbol]['tp_order_id'] = new_ord['id']
+            positions[symbol]['tp_placed_at'] = time.time()
             changed = True
             coin = symbol.split('/')[0]
             print(f"  🔄 {coin} TP {tp_pct:.0%} 補掛 @ {stop_px:.6g}")
