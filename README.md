@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-04 10:54 +08
+> Last updated: 2026-06-04 11:30 +08
 
 ---
 
@@ -121,6 +121,11 @@ Gaps currently noted (see notes file):
 | Break-even SL | Auto-move SL to entry price once gain ≥ 3% | same |
 | Software trailing backup | 15% from peak | same |
 | Max hold time | 36 hours | same |
+
+### Position Reconciliation (`monitor_coins.py`)
+- **On open timeout**: if entry raises `-1007` ("execution status unknown"), the order may have actually filled. `open_pos` queries the exchange's real position and *adopts* it (records locally + places SL/TP) instead of abandoning a potential orphan.
+- **On startup**: `_reconcile_orphans` scans all exchange positions; any with no matching local record is adopted (marked `adopted: true`) so it gains SL/TP protection and close logic.
+- Adopted positions trigger a 🔧 Telegram alert.
 
 ### Breaking News Detector (`monitor_coins.py`)
 - Polls CoinDesk, CoinTelegraph, Decrypt RSS every scan cycle

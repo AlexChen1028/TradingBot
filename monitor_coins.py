@@ -870,6 +870,17 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
             f"{sl_label} | {tp_label}"
         )
     except Exception as e:
+        # 進場過程拋例外（如 -1007「execution status unknown」逾時）：
+        # 訂單可能其實已成交 → 對帳交易所實際倉位，避免產生無 SL/TP 的孤兒倉
+        print(f"  ⚠️ 開倉過程出錯 {symbol}: {e}，查詢交易所實際倉位…")
+        try:
+            if symbol in positions:
+                pass  # 倉位已記錄（例外發生在記錄之後），不重複接管
+            elif _adopt_exchange_position(exchange, symbol, positions):
+                print(f"  ✅ {symbol.split('/')[0]} 實際已成交，已接管並補掛 SL/TP")
+                return
+        except Exception as e2:
+            print(f"  ⚠️ 對帳失敗 {symbol}: {e2}")
         print(f"  ❌ 開倉失敗 {symbol}: {e}")
 
 def close_pos(exchange, symbol, positions, reason):
@@ -1030,6 +1041,75 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
 
     if changed:
         save_positions(positions)
+
+
+def _adopt_exchange_position(exchange, symbol, positions):
+    """接管交易所上存在、但本地無記錄的倉位（孤兒倉）。
+
+    用途：開倉時遇到 -1007「execution status unknown」逾時，訂單其實已成交，
+    或啟動時發現未追蹤的倉位。記錄進本地後立刻用 _sync_sl_tp 補掛 SL/TP。
+    回傳是否成功接管。
+    """
+    ex_pos = exchange.fetch_positions([symbol])
+    p = next(
+        (x for x in ex_pos if x.get('symbol') == symbol and abs(x.get('contracts') or 0) > 0),
+        None,
+    )
+    if p is None:
+        return False  # 交易所實際無此倉位 → 確實開倉失敗
+
+    side_str  = (p.get('side') or '').lower()
+    direction = 1 if side_str == 'long' else -1 if side_str == 'short' else (
+        1 if (p.get('contracts') or 0) > 0 else -1
+    )
+    amount = abs(float(p.get('contracts') or 0))
+    entry  = float(p.get('entryPrice') or exchange.fetch_ticker(symbol)['last'])
+    lev    = MAJOR_LEVERAGE if symbol in set(WATCH_ALWAYS) else LEVERAGE
+    margin = round(amount * entry / lev, 2)
+
+    positions[symbol] = {
+        'direction':    direction,
+        'entry_price':  entry,
+        'entry_time':   now8().isoformat(),
+        'peak_price':   entry,
+        'amount':       amount,
+        'margin_usdt':  margin,
+        'sl_order_id':  None,
+        'tp_order_id':  None,
+        'sl_placed_at': 0,
+        'tp_placed_at': 0,
+        'adopted':      True,
+    }
+    save_positions(positions)
+    side = 'LONG' if direction == 1 else 'SHORT'
+    coin = symbol.split('/')[0]
+    print(f"  🔧 接管未追蹤倉位 {side} {coin} | {amount} @ {entry:.4f}，補掛 SL/TP…")
+    tg(
+        f"🔧 <b>接管未追蹤倉位 {side} {coin}</b>\n"
+        f"進場：{entry:.4f}  數量：{amount}\n"
+        f"（交易所有倉但本地無記錄，可能因開倉逾時 -1007）"
+    )
+    # 立刻補掛 SL/TP（sl/tp_order_id 皆 None → _sync_sl_tp 會視為失效並補掛）
+    _sync_sl_tp(exchange, symbol, positions[symbol], positions)
+    return True
+
+
+def _reconcile_orphans(exchange, positions):
+    """啟動對帳：交易所有倉但本地無記錄 → 接管，避免 -1007 逾時造成的無人管理倉位。"""
+    try:
+        ex_pos = exchange.fetch_positions()
+    except Exception as e:
+        print(f"  ⚠️ 無法取得交易所倉位，跳過啟動對帳：{e}")
+        return
+    for p in ex_pos:
+        sym = p.get('symbol')
+        if not sym or abs(p.get('contracts') or 0) == 0 or sym in positions:
+            continue
+        print(f"  🔍 偵測到未追蹤倉位 {sym}，嘗試接管…")
+        try:
+            _adopt_exchange_position(exchange, sym, positions)
+        except Exception as e:
+            print(f"  ⚠️ 接管 {sym} 失敗：{e}")
 
 
 def check_positions(exchange, positions):
@@ -1386,6 +1466,9 @@ def main():
     if positions:
         print(f"  ▶ 啟動掃描：檢查 {len(positions)} 個既有倉位的 SL/TP 狀態…")
         check_positions(exchange_priv, positions)
+    # 啟動對帳：接管交易所有倉但本地無記錄的孤兒倉（防 -1007 逾時等遺漏）
+    print("  ▶ 啟動對帳：檢查交易所是否有未追蹤倉位…")
+    _reconcile_orphans(exchange_priv, positions)
     watch_coins      = get_top_coins(exchange_pub)
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次
