@@ -45,6 +45,7 @@ WATCH_ALWAYS   = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
 BTC_RESISTANCE_ZONE = (67_000, 67_500)  # 反彈高空帶，逢此區間佈空
 BTC_SUPPORT_ZONE    = (65_000, 66_000)  # 鯨魚護盤區，近此位追空禁令
 POSITIONS_FILE      = 'positions_altcoin.json'
+PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
 TAKER_FEE           = 0.0005  # Binance futures taker fee 0.05%
 NEWS_SEEN_FILE      = 'news_seen.json'
@@ -123,6 +124,37 @@ def load_positions():
 
 def save_positions(pos):
     Path(POSITIONS_FILE).write_text(json.dumps(pos, indent=2))
+
+def _pc_add(symbol, *ids):
+    """把已知的 SL/TP order ID 存入 pending_cancels，供下次開倉前重試取消。"""
+    try:
+        pc = json.loads(Path(PENDING_CANCELS_FILE).read_text()) if Path(PENDING_CANCELS_FILE).exists() else {}
+    except Exception:
+        pc = {}
+    existing = pc.get(symbol, [])
+    for i in ids:
+        if i and i not in existing:
+            existing.append(i)
+    if existing:
+        pc[symbol] = existing
+    Path(PENDING_CANCELS_FILE).write_text(json.dumps(pc))
+
+def _pc_flush(exchange, symbol):
+    """用已知 order ID 逐一取消（比 cancel_all_orders 在 demo 更可靠），清除記錄後再嘗試全撤。"""
+    try:
+        pc = json.loads(Path(PENDING_CANCELS_FILE).read_text()) if Path(PENDING_CANCELS_FILE).exists() else {}
+    except Exception:
+        pc = {}
+    for oid in pc.pop(symbol, []):
+        try:
+            exchange.cancel_order(oid, symbol)
+        except Exception:
+            pass
+    Path(PENDING_CANCELS_FILE).write_text(json.dumps(pc))
+    try:
+        exchange.cancel_all_orders(symbol)
+    except Exception:
+        pass
 
 # ── 重大新聞偵測 ──────────────────────────────────────────────────────────────
 def check_breaking_news():
@@ -758,11 +790,8 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         tp_pct    = MAJOR_TP_PCT    if is_major else TP_PCT
         coin_type = '主流' if is_major else '山寨'
 
-        # 清除此 symbol 所有殘留掛單，避免 -4067 阻礙 set_margin_mode
-        try:
-            exchange.cancel_all_orders(symbol)
-        except Exception:
-            pass
+        # 清除此 symbol 所有殘留掛單（先用已知 ID 逐一取消，再全撤）
+        _pc_flush(exchange, symbol)
 
         try:
             exchange.set_margin_mode('isolated', symbol)
@@ -852,11 +881,9 @@ def close_pos(exchange, symbol, positions, reason):
         amt = pos['amount']
         ep  = pos['entry_price']
 
-        # 取消此 symbol 所有掛單（含殘留的 SL/TP，避免 -4045 超上限）
-        try:
-            exchange.cancel_all_orders(symbol)
-        except Exception:
-            pass
+        # 取消此 symbol 所有掛單（先用已知 ID 逐一取消，再全撤）
+        _pc_add(symbol, pos.get('sl_order_id'), pos.get('tp_order_id'))
+        _pc_flush(exchange, symbol)
 
         close_fn = exchange.create_market_sell_order if d == 1 else exchange.create_market_buy_order
 
@@ -954,7 +981,11 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
     if sl_live and tp_live:
         return  # 兩個都健在，不需補掛
 
-    # 有任一需要補掛：先清除此 symbol 所有殘留掛單，避免 -4045 堆積
+    # 有任一需要補掛：先逐一取消已知 ID，再全撤（避免 -4045 堆積）
+    for oid in [pos.get('sl_order_id'), pos.get('tp_order_id')]:
+        if oid:
+            try: exchange.cancel_order(oid, symbol)
+            except Exception: pass
     try:
         exchange.cancel_all_orders(symbol)
     except Exception:
@@ -1017,11 +1048,9 @@ def check_positions(exchange, positions):
                     for p in ex_pos if p.get('symbol') == symbol
                 )
                 if not still_open:
-                    # 清除此 symbol 所有殘留條件掛單（SL/TP 其中一張觸發後，另一張會殘留）
-                    try:
-                        exchange.cancel_all_orders(symbol)
-                    except Exception:
-                        pass
+                    # 儲存 ID 後逐一取消（SL/TP 其中一張觸發後，另一張殘留；cancel_all 在 demo 失效）
+                    _pc_add(symbol, pos.get('sl_order_id'), pos.get('tp_order_id'))
+                    _pc_flush(exchange, symbol)
                     ep       = pos['entry_price']
                     amt      = pos['amount']
                     pnl_usdt = amt * (price - ep) * d
