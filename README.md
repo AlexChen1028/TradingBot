@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-05 03:09 +08
+> Last updated: 2026-06-06 15:25 +08
 
 ---
 
@@ -102,8 +102,8 @@ Gaps currently noted (see notes file):
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
-- `near_support` gate: when BTC ≤ 61,610 (near 59.8K–61K 生死分水嶺), altcoin SHORT entries are skipped (2026-06-04 KOL: 追空禁令)
-- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA — LONG blocked entirely
+- `near_support` gate: when BTC ≤ 61,610 (near 59K–61K 追空禁令帶, 生死線 59,800), altcoin SHORT entries are skipped (2026-06-06 KOL: 追空禁令)
+- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH — LONG blocked entirely
 
 **Macro filter (hourly):**
 - Fetches BTC 24h change + SPY / QQQ daily return
@@ -400,6 +400,14 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-06（KOL insight 更新）
+- 依 `notes/youtube-insights.md` 2026-06-06 統整（91 個來源）更新 KOL 共識區間（BTC 已正式跌破 60K，插針 59,000）
+- `monitor_coins.py`：
+  - `BTC_SUPPORT_ZONE`: `(59800, 61000)` → `(59000, 61000)`（追空禁令帶；生死線 59,800，失守→55K）
+  - `BTC_RESISTANCE_ZONE`: `(67000, 67500)` → `(61500, 62000)`（飛揚短線反彈極限；歐陽波段更高 65K–66K）
+  - `COIN_BLACKLIST` 加入 `HYPE`（跌破 1.618，思路轉空，禁做多）、`BCH`（老牌山寨無操作價值）
+- `main.py`：`KEY_SUPPORT_ZONE` → `(59000, 61000)`、`KEY_RESISTANCE_ZONE` → `(61500, 62000)`（同步 6/06 共識）
 
 ### 2026-06-04（KOL insight 更新）
 - 依 `notes/youtube-insights.md` 2026-06-04 統整（86 個來源，三方共識）更新 KOL 共識區間
