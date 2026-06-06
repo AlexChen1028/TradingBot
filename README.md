@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-06 15:25 +08
+> Last updated: 2026-06-06 17:14 +08
 
 ---
 
@@ -400,6 +400,12 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-06（bugfix）
+- `monitor_coins.py` `open_pos`：修復主流幣開倉全失敗的 bug
+  - 症狀：BTC 觸發合法信號 → 開倉，但每次倒在 `set_margin_mode` 拋 `-4047`「Margin type cannot be changed if there exists open orders.」→ 開倉中止
+  - 根因：平倉後殘留的條件單（demo `cancel_all` 靜默失敗）擋住改保證金模式；`except` 只容錯 `-4046/-4067`，漏了 Binance 實際回傳的 `-4047`（註解原本就想容錯此情境，但用錯代碼）
+  - 修復：`set_margin_mode` 容錯加入 `-4047`。既已是 isolated，改保證金本非必要，殘留條件單也不擋市價開倉 → 直接繼續
 
 ### 2026-06-06（KOL insight 更新）
 - 依 `notes/youtube-insights.md` 2026-06-06 統整（91 個來源）更新 KOL 共識區間（BTC 已正式跌破 60K，插針 59,000）

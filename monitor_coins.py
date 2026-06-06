@@ -796,8 +796,10 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         try:
             exchange.set_margin_mode('isolated', symbol)
         except Exception as e:
-            if '-4046' in str(e) or '-4067' in str(e) or 'No need to change' in str(e).lower():
-                pass  # 已是 isolated 或有殘留掛單擋住，繼續
+            # -4046/-4067: 已是 isolated；-4047: 有殘留掛單擋住改保證金模式（demo cancel 失敗）
+            # → 既然已是 isolated，改保證金本就非必要，殘留掛單不擋市價開倉，直接繼續
+            if any(c in str(e) for c in ('-4046', '-4067', '-4047')) or 'no need to change' in str(e).lower():
+                pass
             else:
                 raise
         try:
