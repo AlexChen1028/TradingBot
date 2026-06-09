@@ -69,13 +69,13 @@ MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：
 DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
 CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
-# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-06-06 更新）─────────────
+# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-06-09 更新）─────────────
 # 三個 KOL 交集的靜態 Zone，每輪 KOL 更新後手動調整。
-# KEY_RESISTANCE_ZONE : 61,500~62,000（BTC飛揚 6/06：短線反彈極限；歐陽波段更高 65K-66K）
-# KEY_SUPPORT_ZONE    : 59,000~61,000（6/06 追空禁令帶；生死線 59,800）
-# 注意：BTC 已正式跌破 60,000，插針 59,000；59,800 有效跌破→55K，歐陽下行台階 52K-53K
-KEY_SUPPORT_ZONE    = (59_000, 61_000)   # 2026-06-06 追空禁令帶，生死線 59,800
-KEY_RESISTANCE_ZONE = (61_500, 62_000)   # 2026-06-06 BTC飛揚：短線反彈極限做空帶
+# KEY_RESISTANCE_ZONE : 63,000~64,000（三方共識反彈高空帶；59K 插針反彈至 64K 啟明星）
+# KEY_SUPPORT_ZONE    : 59,500~60,000（6/08-09 二探短多區；失守→57,000 長期趨勢線）
+# 注意：本波僅超跌反彈非反轉，空頭趨勢延續；日線熊旗，反彈走完繼續空
+KEY_SUPPORT_ZONE    = (59_500, 60_000)   # 2026-06-09 二探短多區，失守→57,000
+KEY_RESISTANCE_ZONE = (63_000, 64_000)   # 2026-06-09 三方共識反彈高空帶
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(

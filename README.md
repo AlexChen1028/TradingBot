@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-06 17:14 +08
+> Last updated: 2026-06-09 17:16 +08
 
 ---
 
@@ -102,8 +102,8 @@ Gaps currently noted (see notes file):
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
-- `near_support` gate: when BTC ≤ 61,610 (near 59K–61K 追空禁令帶, 生死線 59,800), altcoin SHORT entries are skipped (2026-06-06 KOL: 追空禁令)
-- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH — LONG blocked entirely
+- `near_support` gate: when BTC ≤ 60,600 (near 59.5K–60K 二探短多區), altcoin SHORT entries are skipped (2026-06-09 KOL: 追空禁令)
+- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT — LONG blocked entirely
 
 **Macro filter (hourly):**
 - Fetches BTC 24h change + SPY / QQQ daily return
@@ -400,6 +400,15 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-09（KOL insight 更新）
+- 依 `notes/youtube-insights.md` 2026-06-09 統整（101 個來源，6/06~6/09 共 10 支影片）更新 KOL 共識區間（BTC 從 59K 插針反彈至 64K，日線啟明星；三方共識為超跌反彈非反轉，空頭趨勢延續，反彈高空）
+- `monitor_coins.py`：
+  - `BTC_RESISTANCE_ZONE`: `(61500, 62000)` → `(63000, 64000)`（三方共識反彈高空帶）
+  - `BTC_SUPPORT_ZONE`: `(59000, 61000)` → `(59500, 60000)`（6/08-09 二探短多區；失守→57,000 長期趨勢線）
+  - `near_support` 追空禁令門檻隨之調整至 BTC ≤ 60,600
+  - `COIN_BLACKLIST` 加入 `BEAT`（BTC飛揚 6/09：0.12→2 主力控盤，空中樓閣隨時崩盤如 LAB，嚴禁追高）；CHZ 由 6/07 BTC歐陽復盤再確認（利好出盡 0.045→0.035）
+- `main.py`：`KEY_SUPPORT_ZONE` → `(59500, 60000)`、`KEY_RESISTANCE_ZONE` → `(63000, 64000)`（同步 6/09 共識）
 
 ### 2026-06-06（bugfix）
 - `monitor_coins.py` `open_pos`：修復主流幣開倉全失敗的 bug
