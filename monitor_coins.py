@@ -66,6 +66,18 @@ def _close_params(direction):
         return {'positionSide': 'LONG' if direction == 1 else 'SHORT'}
     return {}
 
+def _place_sltp(exchange, symbol, otype, side, stop_px, direction):
+    """掛 SL/TP 條件單，一律用 closePosition=True：
+    - Binance 會在倉位平倉時自動撤銷同方向殘留的 closePosition 條件單（止盈成交→止損自動消失，反之亦然），
+      不依賴 demo 環境失效的 cancel API。
+    - 每個 symbol/方向只允許一張 closePosition STOP 與一張 TP，從根本杜絕殘留單堆積。
+    - closePosition 模式「不可」帶數量（qty=None），否則 Binance 回 -1106。
+    """
+    return exchange.create_order(symbol, otype, side, None, None, {
+        'stopPrice': stop_px, 'closePosition': True, 'workingType': 'MARK_PRICE',
+        **_close_params(direction),
+    })
+
 # 重大新聞偵測：含以下關鍵字才考慮
 NEWS_KEYWORDS = [
     'crash', 'plunge', 'surge', 'rally', 'hack', 'exploit', 'breach', 'stolen',
@@ -819,28 +831,24 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         sl_id = tp_id = None
         coin = symbol.split('/')[0]
 
-        # 固定止損（STOP_MARKET）— 僅帶 stopPrice + workingType，one-way 不需額外 params
+        # 固定止損（STOP_MARKET）— closePosition=True，平倉時 Binance 自動撤銷對側 TP
         try:
             sl_price = round(
                 price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
             )
-            sl_order = exchange.create_order(symbol, 'stop_market', sl_side, amount, None, {
-                'stopPrice': sl_price, 'workingType': 'MARK_PRICE', **_close_params(direction),
-            })
+            sl_order = _place_sltp(exchange, symbol, 'stop_market', sl_side, sl_price, direction)
             sl_id = sl_order['id']
             print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛")
         except Exception as e:
             print(f"  ❌ 止損訂單失敗 {symbol}: {e}")
             tg(f"⚠️ <b>止損掛單失敗</b> {coin}\n{e}\n倉位已開但<b>無交易所止損保護</b>！")
 
-        # 固定止盈天花板（TAKE_PROFIT_MARKET）
+        # 固定止盈天花板（TAKE_PROFIT_MARKET）— closePosition=True，平倉時 Binance 自動撤銷對側 SL
         try:
             tp_price = round(
                 price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
             )
-            tp_order = exchange.create_order(symbol, 'take_profit_market', sl_side, amount, None, {
-                'stopPrice': tp_price, 'workingType': 'MARK_PRICE', **_close_params(direction),
-            })
+            tp_order = _place_sltp(exchange, symbol, 'take_profit_market', sl_side, tp_price, direction)
             tp_id = tp_order['id']
         except Exception as e:
             print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
@@ -1013,9 +1021,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
             else:
                 stop_px = round(ep * (1 - sl_pct) if d == 1 else ep * (1 + sl_pct), 8)
                 label   = f'SL {sl_pct:.1%}'
-            new_ord = exchange.create_order(symbol, 'stop_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
-            })
+            new_ord = _place_sltp(exchange, symbol, 'stop_market', sl_side, stop_px, d)
             positions[symbol]['sl_order_id'] = new_ord['id']
             positions[symbol]['sl_placed_at'] = time.time()
             changed = True
@@ -1029,9 +1035,7 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
     if not tp_live:
         try:
             stop_px = round(ep * (1 + tp_pct) if d == 1 else ep * (1 - tp_pct), 4)
-            new_ord = exchange.create_order(symbol, 'take_profit_market', sl_side, amt, None, {
-                'stopPrice': stop_px, 'workingType': 'MARK_PRICE', **_close_params(d),
-            })
+            new_ord = _place_sltp(exchange, symbol, 'take_profit_market', sl_side, stop_px, d)
             positions[symbol]['tp_order_id'] = new_ord['id']
             positions[symbol]['tp_placed_at'] = time.time()
             changed = True
@@ -1181,9 +1185,7 @@ def check_positions(exchange, positions):
                         try: exchange.cancel_order(old_sl, symbol)
                         except Exception: pass
                     be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
-                    be_order = exchange.create_order(symbol, 'stop_market', sl_side, pos['amount'], None, {
-                        'stopPrice': be_price, 'workingType': 'MARK_PRICE', **_close_params(d),
-                    })
+                    be_order = _place_sltp(exchange, symbol, 'stop_market', sl_side, be_price, d)
                     positions[symbol]['sl_order_id'] = be_order['id']
                     positions[symbol]['breakeven']   = True
                     save_positions(positions)

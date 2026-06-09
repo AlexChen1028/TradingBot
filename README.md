@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-09 17:16 +08
+> Last updated: 2026-06-09 19:07 +08
 
 ---
 
@@ -400,6 +400,16 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-09（bugfix：殘留掛單堆積）
+- 症狀：交易所只剩 3 個實際倉位，卻累積 16 張掛單；止盈成交後對側止損沒消失（反之亦然）
+- 根因：6/02（`d6aad5a`）把 SL/TP 的 `closePosition: True` 改成 `reduceOnly`，6/03（`620b7a5`）又拿掉 `reduceOnly` → 現在 SL/TP 是「帶數量、無任何旗標」的獨立條件單，平倉時 Binance 不會自動撤銷對側；`_sync_sl_tp` 反覆補掛、demo `cancel` 又靜默失效 → 殘留單越堆越多
+- 修復：新增 `_place_sltp()`，所有 SL/TP/保本單一律改用 **`closePosition: True`（不帶數量）**
+  - Binance 在倉位平倉時自動撤銷同方向殘留的 closePosition 條件單（OCO 效果：止盈成交→止損自動消失）
+  - 每 symbol/方向只允許一張 closePosition STOP + 一張 TP，從根本杜絕堆積，且繞過 demo 失效的 cancel API
+  - closePosition 模式不可帶 qty（否則 -1106），故下單數量改為 `None`
+  - 涵蓋 5 處下單點：`open_pos` SL/TP、`_sync_sl_tp` 補掛 SL/TP、`check_positions` 保本止損
+- 注意：既有的 16 張舊殘留單為非-closePosition 型態，不會自動清除，需一次性手動清掉（見部署說明）
 
 ### 2026-06-09（KOL insight 更新）
 - 依 `notes/youtube-insights.md` 2026-06-09 統整（101 個來源，6/06~6/09 共 10 支影片）更新 KOL 共識區間（BTC 從 59K 插針反彈至 64K，日線啟明星；三方共識為超跌反彈非反轉，空頭趨勢延續，反彈高空）
