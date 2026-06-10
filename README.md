@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-11 00:31 +08
+> Last updated: 2026-06-11 01:28 +08
 
 ---
 
@@ -401,6 +401,14 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-11（bugfix：保本止損 -4130 無限重試）
+- 症狀：倉位獲利 ≥3% 觸發保本止損後，每輪掃描都刷 `-4130 An open stop or take profit order with GTE and closePosition in the direction is existing`（log 中 XLM 連刷數小時）
+- 根因：closePosition 改造（`3f52b46`）後的回歸 bug。保本邏輯先 `cancel_order(舊 SL)` 再用 `_place_sltp` 補掛新的 closePosition STOP，但 demo 無法可靠撤銷條件單 → 舊 closePosition 單仍在，同方向只允許一張 → 補掛被拒 `-4130`；且例外在 `breakeven=True` 設定前拋出，導致每輪無限重試
+- 修復：保本止損改為**軟體強制**，不再動交易所條件單
+  - 觸發時只設 `breakeven=True` + 記錄 `be_price`（進場價 ±0.05%），交易所原 -3.5%/-1% closePosition SL 保留作硬底備援
+  - `check_positions` 平倉判斷新增 `be_hit`：價格回落至 `be_price` → 以「保本止損」平倉（每 15min 掃描檢查，符合既有軟體 SL 備援設計）
+- 另記錄（未修，需查交易所）：ETH 開倉持續 `-2019 Margin is insufficient`，BTC/SOL 同 $80 保證金可成交 → ETH 專屬（疑 demo 帳戶 ETH 槓桿/isolated 錢包狀態異常），待容器內診斷
 
 ### 2026-06-11（feature：ETH 弱勢專屬接多閘門）
 - 依 2026-06-10 KOL insight（BTC歐陽 ETH 接多目標重大下修至 1,370–1,390；極度弱勢取消 1,500 以上做多）新增 ETH 專屬進場閘門

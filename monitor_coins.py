@@ -1178,37 +1178,33 @@ def check_positions(exchange, positions):
             ep      = pos['entry_price']
             held_h  = (now - datetime.fromisoformat(pos['entry_time'])).total_seconds() / 3600
 
-            # 保本止損：獲利 ≥ 3% 後把止損移到進場價
+            # 保本止損：獲利 ≥ 3% 後把止損收緊到進場價
+            #   ⚠️ 不改交易所 closePosition 條件單：demo 無法可靠撤銷舊單，且同方向只允許一張
+            #      closePosition STOP，硬補掛會回 -4130 並每輪重試刷頻。改為軟體強制（每 15min 掃描檢查），
+            #      交易所原 -3.5%/-1% closePosition SL 保留作硬底備援。
             gain_pct = (price - ep) / ep * d
             if gain_pct >= 0.03 and not pos.get('breakeven'):
-                sl_side = 'sell' if d == 1 else 'buy'
-                try:
-                    old_sl = pos.get('sl_order_id')
-                    if old_sl:
-                        try: exchange.cancel_order(old_sl, symbol)
-                        except Exception: pass
-                    be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
-                    be_order = _place_sltp(exchange, symbol, 'stop_market', sl_side, be_price, d)
-                    positions[symbol]['sl_order_id'] = be_order['id']
-                    positions[symbol]['breakeven']   = True
-                    save_positions(positions)
-                    coin = symbol.split('/')[0]
-                    print(f"  🔒 {coin} 保本止損啟動（進場 {ep:.4f}，現價 {price:.4f}，獲利 {gain_pct:.1%}）")
-                    tg(f"🔒 <b>保本止損啟動</b> {coin}\n獲利已達 {gain_pct:.1%}，止損移至進場價附近 {be_price:.4f}")
-                except Exception as e:
-                    print(f"  ⚠️ 保本止損失敗 {symbol}: {e}")
+                be_price = round(ep * (1 + 0.0005) if d == 1 else ep * (1 - 0.0005), 8)
+                positions[symbol]['breakeven'] = True
+                positions[symbol]['be_price']  = be_price
+                save_positions(positions)
+                coin = symbol.split('/')[0]
+                print(f"  🔒 {coin} 保本止損啟動（軟體，進場 {ep:.4f}，現價 {price:.4f}，獲利 {gain_pct:.1%}）")
+                tg(f"🔒 <b>保本止損啟動</b> {coin}\n獲利已達 {gain_pct:.1%}，止損收緊至進場價附近 {be_price:.4f}（軟體強制，每 15min 檢查）")
 
             _is_major = symbol in set(WATCH_ALWAYS)
             _sl_pct   = MAJOR_SL_PCT if _is_major else STOP_LOSS_PCT
             _tp_pct   = MAJOR_TP_PCT if _is_major else TP_PCT
 
             sl      = (price < ep * (1 - _sl_pct)) if d == 1 else (price > ep * (1 + _sl_pct))
+            be_px   = pos.get('be_price', ep)
+            be_hit  = bool(pos.get('breakeven')) and ((price <= be_px) if d == 1 else (price >= be_px))
             tp_sw   = (price > ep * (1 + _tp_pct)) if d == 1 else (price < ep * (1 - _tp_pct))
             trail   = (price < peak * (1 - TRAILING_PCT)) if d == 1 else (price > peak * (1 + TRAILING_PCT))
             timeout = held_h >= MAX_HOLD_HOURS
 
-            if sl or tp_sw or trail or timeout:
-                reason = '止損' if sl else ('軟體止盈' if tp_sw else ('追蹤止盈備援' if trail else '超時平倉'))
+            if sl or be_hit or tp_sw or trail or timeout:
+                reason = '止損' if sl else ('保本止損' if be_hit else ('軟體止盈' if tp_sw else ('追蹤止盈備援' if trail else '超時平倉')))
                 close_pos(exchange, symbol, positions, reason)
         except Exception as e:
             print(f"  ⚠️ 檢查倉位 {symbol} 失敗: {e}")
