@@ -103,6 +103,7 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - `near_support` gate: when BTC ≤ 60,600 (near 59.5K–60K 二探短多區), altcoin SHORT entries are skipped (2026-06-09 KOL: 追空禁令)
+- ETH-only gate (`ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,500): ETH LONG allowed **only** within the extreme 接多 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 1,356–1,404 (插針反彈預期) (2026-06-10 KOL: 極度弱勢，僅極端接多)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -401,6 +402,14 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 
 ## Changelog
 
+### 2026-06-11（feature：ETH 弱勢專屬接多閘門）
+- 依 2026-06-10 KOL insight（BTC歐陽 ETH 接多目標重大下修至 1,370–1,390；極度弱勢取消 1,500 以上做多）新增 ETH 專屬進場閘門
+- 新增常數 `ETH_LONG_ZONE = (1370, 1390)`、`ETH_NO_LONG_ABOVE = 1500`
+- `scan()` 對 `ETH/USDT:USDT` 加兩道閘門（對稱設計，呼應 BTC_SUPPORT_ZONE/near_support）：
+  - 做多：價格 > 接多區上緣 ×1.01（≈1,404）一律跳過 → ETH 多單只在極端插針區放行；訊息依 ≥1,500 顯示「極度弱勢」否則「未到極端接多區」
+  - 做空：價格落在 1,356–1,404（接多區 ±1%）跳過 → 預期插針反彈，禁地板空
+- 現價約 1,600 → ETH 多單實質全關，須等深插至 1,370–1,390 才會接多；ETH 空單則維持（僅在接多區暫停）
+
 ### 2026-06-10（KOL insight 更新）
 - 依 `notes/youtube-insights.md` 2026-06-10 統整（102~106 個來源，6/09~6/10 共 4 支新影片：加密龐克 ×2、BTC飛揚 ×2、BTC歐陽 ×1）更新 KOL 共識區間
   - 市況定調：議息會議與通脹數據前的雙向收割期；大鯨魚單日砸盤 2,000+ BTC，反彈僅為空頭平倉燃料，非反轉；三方共識嚴禁地板空、逢高做空
@@ -411,7 +420,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
   - `near_support` 追空禁令門檻維持 BTC ≤ 60,600；`SHORT_BIAS` 維持 `True`
   - `COIN_BLACKLIST` 不變（新點名的 ADA/BCH/WLD/HYPE/CHZ/BEAT 皆已在名單內）
 - `main.py`：`KEY_RESISTANCE_ZONE` → `(62500, 64000)`；`KEY_SUPPORT_ZONE` 維持 `(59500, 60000)`
-- 暫緩（event-driven/ETH 專屬，待後續實作）：議息前 ±12h 關閉市價追單、ETH 1,370–1,390 極端接多、鯨魚淨流出過濾器
+- 暫緩（event-driven，待後續實作）：議息前 ±12h 關閉市價追單、鯨魚淨流出過濾器（ETH 1,370–1,390 極端接多已於 2026-06-11 實作）
 
 ### 2026-06-09（bugfix：殘留掛單堆積）
 - 症狀：交易所只剩 3 個實際倉位，卻累積 16 張掛單；止盈成交後對側止損沒消失（反之亦然）

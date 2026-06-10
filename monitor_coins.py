@@ -44,6 +44,9 @@ WATCH_ALWAYS   = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
 # BTC 關鍵區間（三位 KOL 共識，2026-06-10 晚間更新）
 BTC_RESISTANCE_ZONE = (62_500, 64_000)  # 寬高空帶（飛揚下調 62.5-63K + 歐陽 63.5-64K 強壓；無放量上穿→逢高做空）
 BTC_SUPPORT_ZONE    = (59_500, 60_000)  # 二探接多防守區（歐陽左側掛單）；放量跌破 59,000→清多，終極大底 54,000（龐克已實現成本線）
+# ETH 關鍵區間（KOL 共識，2026-06-10 晚間更新）— ETH 極度弱勢，僅極端插針接多
+ETH_LONG_ZONE       = (1_370, 1_390)  # 極端插針接多區（BTC歐陽重大下修，流動性枯竭接反彈）；做多僅此區放行，同區禁空（防地板空）
+ETH_NO_LONG_ABOVE   = 1_500           # 1,500 以上一律不做多（ETH 極度弱勢，取消 1,500 以上多單）
 POSITIONS_FILE      = 'positions_altcoin.json'
 PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
@@ -1415,6 +1418,16 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             if d == 1 and SHORT_BIAS and symbol in set(WATCH_ALWAYS) and result['n'] < min_sig + 1:
                 print(f"  📉 SHORT_BIAS: {symbol.split('/')[0]} LONG 信號不足（需 {min_sig+1}，有 {result['n']}），跳過")
                 continue
+            # ETH 弱勢專屬閘門（2026-06-10 KOL：極度弱勢，做多僅在 1,370-1,390 極端插針區，同區禁空）
+            if symbol == 'ETH/USDT:USDT':
+                px = result['price']
+                if d == 1 and px > ETH_LONG_ZONE[1] * 1.01:   # 不在接多區 → 一律不做多
+                    why = "極度弱勢" if px >= ETH_NO_LONG_ABOVE else f"未到極端接多區 {ETH_LONG_ZONE[0]:,}-{ETH_LONG_ZONE[1]:,}"
+                    print(f"  🚫 ETH 做多跳過（{why}，現價 {px:,.0f}）")
+                    continue
+                if d == -1 and ETH_LONG_ZONE[0] * 0.99 <= px <= ETH_LONG_ZONE[1] * 1.01:
+                    print(f"  🛑 ETH 進入極端接多區 {ETH_LONG_ZONE[0]:,}-{ETH_LONG_ZONE[1]:,}（現價 {px:,.0f}），預期插針反彈，禁空")
+                    continue
             if d == 1 and result.get('rsi', 50) >= 80:
                 continue  # RSI 超買，跳過做多
             if d == -1 and result.get('rsi', 50) <= 20:
