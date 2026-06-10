@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-09 19:07 +08
+> Last updated: 2026-06-11 00:31 +08
 
 ---
 
@@ -400,6 +400,18 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-10（KOL insight 更新）
+- 依 `notes/youtube-insights.md` 2026-06-10 統整（102~106 個來源，6/09~6/10 共 4 支新影片：加密龐克 ×2、BTC飛揚 ×2、BTC歐陽 ×1）更新 KOL 共識區間
+  - 市況定調：議息會議與通脹數據前的雙向收割期；大鯨魚單日砸盤 2,000+ BTC，反彈僅為空頭平倉燃料，非反轉；三方共識嚴禁地板空、逢高做空
+  - 宏觀：加密龐克「虧損>盈利」黃金交叉觸發，預期 9~10 月才真正反轉；終極大底 54,000（已實現成本線）
+- `monitor_coins.py`：
+  - `BTC_RESISTANCE_ZONE`: `(63000, 64000)` → `(62500, 64000)`（寬高空帶：飛揚下調 62.5-63K + 歐陽 63.5-64K 強壓）
+  - `BTC_SUPPORT_ZONE`: 維持 `(59500, 60000)`（歐陽二探接多防守區；放量跌破 59,000→清多，下看 54,000）
+  - `near_support` 追空禁令門檻維持 BTC ≤ 60,600；`SHORT_BIAS` 維持 `True`
+  - `COIN_BLACKLIST` 不變（新點名的 ADA/BCH/WLD/HYPE/CHZ/BEAT 皆已在名單內）
+- `main.py`：`KEY_RESISTANCE_ZONE` → `(62500, 64000)`；`KEY_SUPPORT_ZONE` 維持 `(59500, 60000)`
+- 暫緩（event-driven/ETH 專屬，待後續實作）：議息前 ±12h 關閉市價追單、ETH 1,370–1,390 極端接多、鯨魚淨流出過濾器
 
 ### 2026-06-09（bugfix：殘留掛單堆積）
 - 症狀：交易所只剩 3 個實際倉位，卻累積 16 張掛單；止盈成交後對側止損沒消失（反之亦然）

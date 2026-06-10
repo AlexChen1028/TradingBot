@@ -41,9 +41,9 @@ TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
 # 這三個幣永遠在掃描清單內，不依賴波動性排名
 WATCH_ALWAYS   = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
-# BTC 關鍵區間（三位 KOL 共識，2026-06-09 更新）
-BTC_RESISTANCE_ZONE = (63_000, 64_000)  # 反彈高空帶（59K 插針反彈至 64K 啟明星；三方共識高空進場區）
-BTC_SUPPORT_ZONE    = (59_500, 60_000)  # 二探短多區；失守→57,000 長期趨勢線（龐克），歐陽下行台階更低
+# BTC 關鍵區間（三位 KOL 共識，2026-06-10 晚間更新）
+BTC_RESISTANCE_ZONE = (62_500, 64_000)  # 寬高空帶（飛揚下調 62.5-63K + 歐陽 63.5-64K 強壓；無放量上穿→逢高做空）
+BTC_SUPPORT_ZONE    = (59_500, 60_000)  # 二探接多防守區（歐陽左側掛單）；放量跌破 59,000→清多，終極大底 54,000（龐克已實現成本線）
 POSITIONS_FILE      = 'positions_altcoin.json'
 PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
