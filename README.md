@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-11 01:28 +08
+> Last updated: 2026-06-13 15:03 +08
 
 ---
 
@@ -103,8 +103,8 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - `near_support` gate: when BTC ≤ 60,600 (near 59.5K–60K 二探短多區), altcoin SHORT entries are skipped (2026-06-09 KOL: 追空禁令)
-- ETH-only gate (`ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,500): ETH LONG allowed **only** within the extreme 接多 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 1,356–1,404 (插針反彈預期) (2026-06-10 KOL: 極度弱勢，僅極端接多)
-- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT — LONG blocked entirely
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,680–1,700 / `ETH_SUPPORT_ZONE` 1,592–1,620 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): W底反彈衝頸線，逢高做空為主。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,592–1,620 生死線，未跌破嚴禁追空) (2026-06-13 KOL)
+- `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
 - Fetches BTC 24h change + SPY / QQQ daily return
@@ -401,6 +401,17 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-13（KOL insight 更新）
+- 依 `notes/youtube-insights.md` 2026-06-10~06-13 統整（NotebookLM 117 個來源，11 支新影片：加密龐克 ×2、BTC飛揚 ×6、BTC歐陽 ×3）更新 KOL 共識區間
+- **BTC**：支撐帶加寬 `BTC_SUPPORT_ZONE (59500, 60000) → (59500, 61000)`（新增 60-61K 三位共識短線支撐）；壓力帶 `(62500, 64000)` 維持（牛熊線上修至 65-65.5K）。`main.py` 的 `KEY_SUPPORT_ZONE` 同步
+- **ETH 結構翻轉**：上一版「極弱、僅 1,370-1,390 接多、1,500 以上禁多」已過時。ETH 走出 W 底反彈衝頸線 →
+  - 新增 `ETH_RESISTANCE_ZONE (1680, 1700)`（三位共識高空進場頸線壓制）
+  - 新增 `ETH_SUPPORT_ZONE (1592, 1620)`（生死線大級別支撐，未跌破嚴禁追空，做空閘門新增此區跳過）
+  - `ETH_LONG_ZONE (1370, 1390)` 降級為「悲觀二探」（僅 BTC 跌破6萬才看），做多仍僅此區放行
+  - `ETH_NO_LONG_ABOVE 1500 → 1700`
+- **黑名單**：新增 `LTC`（加密龐克：老牌弱勢流動性枯竭，關閉抄底網格，禁做多）
+- 暫緩（deferred，需 on-chain/macro 資料源）：鯨魚單日淨賣出 >1000 BTC 暫停接多、SpaceX IPO/世界盃吸血期山寨多單權重 -80%、ETH 極端負費率+OI 高位軋空保護（暫停 1,650-1,680 做空腳本）
 
 ### 2026-06-11（bugfix：保本止損 -4130 無限重試）
 - 症狀：倉位獲利 ≥3% 觸發保本止損後，每輪掃描都刷 `-4130 An open stop or take profit order with GTE and closePosition in the direction is existing`（log 中 XLM 連刷數小時）
