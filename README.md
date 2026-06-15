@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-15 23:33 +08
+> Last updated: 2026-06-16 00:07 +08
 
 ---
 
@@ -401,6 +401,12 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-16（bugfix：SOL SL/TP 補掛 -4130 每輪重刷）
+- 症狀：SOL 開倉時 SL/TP 掛失敗（`止損 1.0% ⚠️ 止盈 2% ⚠️`），之後 `_sync_sl_tp` 每 15min 重複補掛並刷 `-4130 An open stop or take profit order with GTE and closePosition in the direction is existing`（log 連刷數十次）
+- 根因：前一筆 SOL closePosition SL/TP 在 demo 撤不掉、殘留交易所 → 新倉開倉補掛同向 closePosition 單被 -4130 擋 → `sl_order_id` 留 None → 每輪 `_sync_sl_tp` 判定需補掛又撞 -4130。demo 的 openOrders API 也不列出 closePosition 條件單，故殘單既撈不到也撤不掉，**-4130 本身是唯一可靠的「殘單存在」訊號**
+- 影響評估：**無實際損失**。殘留的 closePosition 單仍有效保護倉位（該 SOL 倉最終由交易所 TP 觸發 🎯 +98.42 U 平倉），且 `check_positions` 每 15min 軟體 SL/TP 兜底。純 log 噪音 + 新倉缺自身正確價位的交易所 SL/TP
+- 修復：`_sync_sl_tp` 遇 -4130 即標記 `sltp_4130_noted=True` 並停止每輪重刷（與保本止損同設計），改信任軟體 SL/TP；旗標隨倉位生命週期，平倉即清。新增 `scripts/diag_sol_orders.py` / `diag_stale_orders.py` 診斷腳本
 
 ### 2026-06-15（KOL insight 更新：逼空後結構上移）
 - 依 `notes/youtube-insights.md` 2026-06-13~06-15 統整（NotebookLM 123 個來源，6 支新影片：BTC飛揚 ×4、BTC歐陽 ×2；加密龐克最新停留 6/12）更新 KOL 共識區間

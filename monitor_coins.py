@@ -989,6 +989,11 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
     except Exception:
         pass  # 查詢失敗時保守繼續（避免遺漏真正需要補掛的情況）
 
+    # 已知交易所有同向 closePosition 單擋著（前次補掛吃 -4130，demo 撈不到也撤不掉）→
+    # 不再每輪重刷 -4130，改由 check_positions 每 15min 軟體 SL/TP 兜底（與保本止損同設計）
+    if pos.get('sltp_4130_noted'):
+        return
+
     def _order_live(oid, placed_ts):
         if not oid:
             return False
@@ -1034,7 +1039,15 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
             print(f"  🔄 {coin} {label} 補掛 @ {stop_px:.6g}")
             tg(f"⚠️ <b>SL 補掛</b> {coin}\n{label} @ {stop_px:.6g}（原訂單已失效）")
         except Exception as e:
-            print(f"  ⚠️ {symbol} SL 補掛失敗: {e}")
+            if '-4130' in str(e):
+                # 交易所已有同向 closePosition 止損單（demo 撤不掉/撈不到）→ 標記後停止每輪重刷
+                positions[symbol]['sltp_4130_noted'] = True
+                changed = True
+                coin = symbol.split('/')[0]
+                print(f"  🔒 {coin} 交易所已有同向 closePosition 止損單（-4130）→ 改每 15min 軟體止損兜底，停止重刷")
+                tg(f"🔒 <b>{coin} 止損改軟體兜底</b>\n交易所已存在同向 closePosition 單（-4130 無法重複掛），由軟體止損每 15min 保護")
+            else:
+                print(f"  ⚠️ {symbol} SL 補掛失敗: {e}")
 
     # TP 訂單
     if not tp_live:
@@ -1048,7 +1061,12 @@ def _sync_sl_tp(exchange, symbol, pos, positions):
             print(f"  🔄 {coin} TP {tp_pct:.0%} 補掛 @ {stop_px:.6g}")
             tg(f"⚠️ <b>TP 補掛</b> {coin}\nTP {tp_pct:.0%} @ {stop_px:.6g}（原訂單已失效）")
         except Exception as e:
-            print(f"  ⚠️ {symbol} TP 補掛失敗: {e}")
+            if '-4130' in str(e):
+                # 交易所已有同向 closePosition 止盈單 → 標記後停止每輪重刷（軟體止盈兜底）
+                positions[symbol]['sltp_4130_noted'] = True
+                changed = True
+            else:
+                print(f"  ⚠️ {symbol} TP 補掛失敗: {e}")
 
     if changed:
         save_positions(positions)
