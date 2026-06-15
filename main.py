@@ -69,13 +69,13 @@ MAX_DD_PCT     = float(os.getenv('MAX_DD_PCT', '0.20'))  # 最大回撤保護：
 DEMO_MODE      = os.getenv('DEMO_MODE', 'true').lower() == 'true'    # 模擬 / 實盤模式
 CORR_PROTECT   = os.getenv('CORR_PROTECT', 'true').lower() == 'true' # BTC/ETH 相關性保護
 
-# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-06-13 更新）──────────
+# ── KOL 共識支撐/壓力區（notes/youtube-insights.md 2026-06-15 更新）──────────
 # 三個 KOL 交集的靜態 Zone，每輪 KOL 更新後手動調整。
-# KEY_RESISTANCE_ZONE : 62,500~64,000（寬高空帶：飛揚 62.5-63K + 歐陽 63.5-64K 強壓；牛熊線 65-65.5K）
-# KEY_SUPPORT_ZONE    : 59,500~61,000（二探接多 59.5-60K + 60-61K 短線支撐；放量跌破 59,000→終極大底 54,000）
-# 注意：本波僅超跌反彈非反轉，空頭趨勢延續；日線收斂三角/熊旗，嚴禁地板空；鯨魚反彈中砸盤未現貨支撐
-KEY_SUPPORT_ZONE    = (59_500, 61_000)   # 2026-06-13 二探接多+短線支撐，跌破 59,000→54,000
-KEY_RESISTANCE_ZONE = (62_500, 64_000)   # 2026-06-13 寬高空帶（飛揚+歐陽共識）
+# KEY_RESISTANCE_ZONE : 65,500~66,500（逼空上拉後強壓：歐陽 65,600+66,500 分批掛空；週線極限 69-70K）
+# KEY_SUPPORT_ZONE    : 63,500~64,500（短線分水嶺；跌破→63,500，宏觀極限防守 59,000 前低雙底）
+# 注意：本波逼空清算空頭非反轉，空頭趨勢延續；嚴禁地板追空；SpaceX IPO+世界盃吸血山寨
+KEY_SUPPORT_ZONE    = (63_500, 64_500)   # 2026-06-15 短線分水嶺，跌破→63,500→59,000
+KEY_RESISTANCE_ZONE = (65_500, 66_500)   # 2026-06-15 逼空後強壓（飛揚+歐陽共識）
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(

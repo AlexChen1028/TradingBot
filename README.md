@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-13 15:03 +08
+> Last updated: 2026-06-15 23:33 +08
 
 ---
 
@@ -102,8 +102,8 @@ Gaps currently noted (see notes file):
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
-- `near_support` gate: when BTC ≤ 60,600 (near 59.5K–60K 二探短多區), altcoin SHORT entries are skipped (2026-06-09 KOL: 追空禁令)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,680–1,700 / `ETH_SUPPORT_ZONE` 1,592–1,620 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): W底反彈衝頸線，逢高做空為主。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,592–1,620 生死線，未跌破嚴禁追空) (2026-06-13 KOL)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-15: 63.5K–64.5K 分水嶺), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,680–1,700 / `ETH_SUPPORT_ZONE` 1,620–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 1698 精準承壓未破 1700，逢高做空為主。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,620–1,640 地板空過濾，等 1,600 有效跌破) (2026-06-15 KOL)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -401,6 +401,14 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-15（KOL insight 更新：逼空後結構上移）
+- 依 `notes/youtube-insights.md` 2026-06-13~06-15 統整（NotebookLM 123 個來源，6 支新影片：BTC飛揚 ×4、BTC歐陽 ×2；加密龐克最新停留 6/12）更新 KOL 共識區間
+- **本波定性**：空頭清算逼空（BTC 觸 66K），反彈非反轉，空頭趨勢延續；嚴禁地板追空
+- **BTC 大幅上移**：`BTC_RESISTANCE_ZONE (62500,64000) → (65500,66500)`（歐陽 65,600+66,500 分批掛空；週線極限 69-70K EMA 缺口）；`BTC_SUPPORT_ZONE (59500,61000) → (63500,64500)`（短線分水嶺，宏觀極限防守 59,000 前低雙底）。`near_support` 追空禁令門檻動態連動此區。`main.py` KEY zones 同步
+- **ETH 地板空過濾帶上移**：`ETH_SUPPORT_ZONE (1592,1620) → (1620,1640)`（飛揚：1698 精準承壓，1,620-1,640 已無追空價值，等 1,600 有效跌破才有暴跌空間）。高空 1,680-1,700、接多 1,370-1,390 維持
+- 黑名單建議新增 ADA/WLD/LAB 皆已在名單內，無需變動
+- 暫緩（deferred，需 on-chain/macro 資料源或 SHORT_BIAS 已涵蓋）：BTC 高空狙擊 Limit Sell 模組（66,000-66,500 掛單+止損 69,500+回落分批）、山寨做多權重 -90%（SHORT_BIAS 已全擋）、HYPE 64-66 接多
 
 ### 2026-06-13（KOL insight 更新）
 - 依 `notes/youtube-insights.md` 2026-06-10~06-13 統整（NotebookLM 117 個來源，11 支新影片：加密龐克 ×2、BTC飛揚 ×6、BTC歐陽 ×3）更新 KOL 共識區間

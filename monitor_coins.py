@@ -41,14 +41,14 @@ TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
 # 這三個幣永遠在掃描清單內，不依賴波動性排名
 WATCH_ALWAYS   = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
-# BTC 關鍵區間（三位 KOL 共識，2026-06-13 更新）
-BTC_RESISTANCE_ZONE = (62_500, 64_000)  # 寬高空帶（飛揚 62.5-63K + 歐陽 63.5-64K 強壓；牛熊線 65-65.5K，未收復前反彈皆技術性）
-BTC_SUPPORT_ZONE    = (59_500, 61_000)  # 二探接多防守區（59.5-60K 歐陽掛多）+ 60-61K 三位共識短線支撐；放量跌破 59,000→清多，終極大底 54,000
-# ETH 關鍵區間（KOL 共識，2026-06-13 更新）— W底反彈衝頸線，逢高做空為主
-ETH_RESISTANCE_ZONE = (1_680, 1_700)  # 高空進場區（三位共識頸線壓制）；逢高做空主觸發
-ETH_SUPPORT_ZONE    = (1_592, 1_620)  # 短線生死線（龐克/飛揚大級別支撐）；未跌破嚴禁追空（防地板空）
+# BTC 關鍵區間（KOL 共識，2026-06-15 更新）— 逼空上拉至 66K，壓力大幅上移
+BTC_RESISTANCE_ZONE = (65_500, 66_500)  # 強壓高空進場（歐陽 65,600+66,500 分批掛空；飛揚支阻轉換已成強壓）；週線極限 69-70K（EMA 缺口，絕對止損）
+BTC_SUPPORT_ZONE    = (63_500, 64_500)  # 短線分水嶺（小雙頂頸線，跌破→63,500）；宏觀極限防守 59,000（前低雙底）
+# ETH 關鍵區間（KOL 共識，2026-06-15 更新）— 1698 精準承壓未破 1700，逢高做空為主
+ETH_RESISTANCE_ZONE = (1_680, 1_700)  # 高空進場區（歐陽 1665 底多→1683 出，計劃此區反手做空）；逢高做空主觸發
+ETH_SUPPORT_ZONE    = (1_620, 1_640)  # 地板空過濾帶（飛揚：已無追空價值，等 1,600 有效跌破才有暴跌空間）；此區禁空
 ETH_LONG_ZONE       = (1_370, 1_390)  # 悲觀二探接多區（僅 BTC 跌破6萬才看此位）；做多僅此區放行，同區禁空
-ETH_NO_LONG_ABOVE   = 1_700           # 1,700 以上一律不做多（ETH 弱勢，僅逢高做空）
+ETH_NO_LONG_ABOVE   = 1_700           # 1,700 以上一律不做多（ETH 多頭極度弱勢，僅逢高做空）
 POSITIONS_FILE      = 'positions_altcoin.json'
 PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
@@ -1272,7 +1272,7 @@ def get_btc_kol_gate(exchange_pub):
         btc_px  = float(exchange_pub.fetch_ticker('BTC/USDT')['last'])
         fake_breakout = bool(fr_raw > 0.0005 and ema200 * 0.995 <= btc_px <= ema200 * 1.01)
         squeeze_fuel  = bool(btc_px > ema200 * 0.98 and fr_raw < -0.0001)
-        near_support  = bool(btc_px <= BTC_SUPPORT_ZONE[1] * 1.01)  # 2026-06-09 追空禁令：接近二探區 59.5-60K（預計二次回測底部，易反彈）
+        near_support  = bool(btc_px <= BTC_SUPPORT_ZONE[1] * 1.01)  # 追空禁令：接近支撐區（2026-06-15 分水嶺 63.5-64.5K，跌破才有暴跌空間，否則易反彈）
         _btc_kol_cache.update({
             'fake_breakout': fake_breakout, 'squeeze_fuel': squeeze_fuel,
             'near_support': near_support,
@@ -1444,7 +1444,7 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             if d == 1 and get_btc_kol_gate(exchange_pub).get('fake_breakout'):
                 print(f"  ⚠️ KOL: BTC 假突破風險，跳過 {symbol.split('/')[0]} 做多")
                 continue
-            # 2026-06-03 追空禁令：BTC 接近支撐區（65K-66K），山寨幣不追空
+            # 追空禁令：BTC 接近支撐區（2026-06-15 分水嶺 63.5-64.5K），山寨幣不追空
             if d == -1 and symbol not in set(WATCH_ALWAYS) and get_btc_kol_gate(exchange_pub).get('near_support'):
                 print(f"  🛑 追空禁令：BTC 接近支撐區，跳過 {symbol.split('/')[0]} 空倉")
                 continue
