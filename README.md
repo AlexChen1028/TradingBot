@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-16 00:07 +08
+> Last updated: 2026-06-16 23:41 +08
 
 ---
 
@@ -102,8 +102,9 @@ Gaps currently noted (see notes file):
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-15: 63.5K–64.5K 分水嶺), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,680–1,700 / `ETH_SUPPORT_ZONE` 1,620–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 1698 精準承壓未破 1700，逢高做空為主。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,620–1,640 地板空過濾，等 1,600 有效跌破) (2026-06-15 KOL)
+- **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-16: 65.2K–65.5K 防守線), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,800–1,820 / `ETH_SUPPORT_ZONE` 1,700–1,720 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 突破 1,700 暴漲百點，做空點上移至 1,800-1,820（關閉 1,700 附近做空）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,700–1,720 阻力轉支撐) (2026-06-16 KOL)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -401,6 +402,15 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-16（KOL insight 更新：軋空續演 + Short-Squeeze Filter）
+- 依 `notes/youtube-insights.md` 2026-06-15~06-16 統整（NotebookLM 127 個來源，4 支新影片：加密龐克 ×1、BTC飛揚 ×2、BTC歐陽 ×1）更新 KOL 共識區間
+- **本波定性**：67,200 高空精準命中後軋空續演；極端負費率 + OI 創新高 = 主力惡意軋空起手式；川普放鴿+美伊停戰助推，但消息面利好≠趨勢反轉，大級別仍偏空
+- **🔴 新增 Short-Squeeze Filter**（`squeeze_no_short`）：BTC 資金費率 ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **且** OI 達 14 日新高 → 全市場暫停所有新追空（OI 資料不可得時降級為僅看費率）。加進 `get_btc_kol_gate`，`scan()` 對 `d==-1` 全幣種攔截
+- **BTC 壓力/支撐再上移**：`BTC_RESISTANCE_ZONE (65500,66500) → (66000,67500)`（保守 66,000-66,500 歐陽佈空；積極 67,000-67,500 軋空終極目標）；`BTC_SUPPORT_ZONE (63500,64500) → (65200,65500)`（關鍵防守線，回踩不破可反手短多）；新增 `BTC_HARD_STOP = 69,150`（飛揚硬止損）。`near_support` 連動、`main.py` KEY zones 同步
+- **ETH 做空點大幅上移**：突破 1,700 暴漲百點 → `ETH_RESISTANCE_ZONE (1680,1700) → (1800,1820)`（歐陽長線天花板；飛揚短多止盈 1,780-1,800）；`ETH_SUPPORT_ZONE (1620,1640) → (1700,1720)`（阻力轉支撐帶，此區禁空）。接多 1,370-1,390、`ETH_NO_LONG_ABOVE 1,700` 維持
+- 黑名單建議新增 ADA/LAB 皆已在名單內，無需變動
+- 暫緩（deferred）：ZEC 回踩 500-520 接多、HYPE 64-66 做空目標 53-55（皆需個幣 limit 掛單模組，SHORT_BIAS 已擋山寨多）
 
 ### 2026-06-16（bugfix：SOL SL/TP 補掛 -4130 每輪重刷）
 - 症狀：SOL 開倉時 SL/TP 掛失敗（`止損 1.0% ⚠️ 止盈 2% ⚠️`），之後 `_sync_sl_tp` 每 15min 重複補掛並刷 `-4130 An open stop or take profit order with GTE and closePosition in the direction is existing`（log 連刷數十次）
