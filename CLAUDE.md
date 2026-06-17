@@ -58,11 +58,13 @@ There is **no test suite, linter, or build step** — `_test_api.py` / `_test_mo
 
 ## KOL-insight workflow (project-specific)
 
-This project's risk parameters are driven by a recurring manual+automated pipeline, not just backtests:
+This project's risk parameters are driven by a recurring part-automated, part-manual pipeline, not just backtests. The real flow (as of 2026-06-18):
 
-- `notes/youtube-insights.md` is the canonical digest of crypto-KOL YouTube analysis. New sections are appended (dated).
-- `scripts/auto_kol_update.py` is a daily cron job (8am Taipei) that fetches KOL video transcripts, summarizes them with the Gemini API, appends to the insights file, applies high-confidence parameter changes to `monitor_coins.py`, and commits/pushes.
-- When the user says "我更新了 insight，幫我更新 code", they mean: read the newest dated section of `notes/youtube-insights.md` and translate the consensus (support/resistance zones, long/short bias, coin blacklist changes) into the constants at the top of `monitor_coins.py` (e.g. `BTC_SUPPORT_ZONE`, `BTC_RESISTANCE_ZONE`, `SHORT_BIAS`, `COIN_BLACKLIST`, the `near_support` gate). `main.py` has its own `KEY_SUPPORT_ZONE` / `KEY_RESISTANCE_ZONE`.
+1. **Detection — automated.** `scripts/notify_new_kol_videos.py` runs on a VPS cron (`50 0,12 * * *` = 08:50 / 20:50 Taipei). It reads only the KOL channels' YouTube RSS (no transcripts, no Gemini), diffs against `notes/.kol_seen.json`, and sends a Telegram alert (via `MONITOR_TOKEN`/`MONITOR_CHAT_ID`) listing any new videos, then records them so it won't re-alert. RSS is not IP-banned from the VPS, so this works unattended.
+2. **Summarization — manual.** The user takes the alerted videos into **NotebookLM** (no API), gets a digest, and pastes a new dated section into `notes/youtube-insights.md`. This is the only step that requires human action.
+3. **Code-apply — automated/assisted.** When the user says "我更新了 insight，幫我更新 code" (or via the session-only daily Claude cron), read the newest dated section of `notes/youtube-insights.md` and translate the consensus (support/resistance zones, long/short bias, coin blacklist changes) into the constants at the top of `monitor_coins.py` (e.g. `BTC_SUPPORT_ZONE`, `BTC_RESISTANCE_ZONE`, `SHORT_BIAS`, `COIN_BLACKLIST`, the `near_support` gate; `main.py` has its own `KEY_SUPPORT_ZONE`/`KEY_RESISTANCE_ZONE`), then commit + push + deploy to the VPS.
+
+> **Note:** `scripts/auto_kol_update.py` (the older Gemini pipeline that fetched transcripts → summarized → auto-applied) is **NOT used** and does not work on the VPS: `youtube_transcript_api` is IP-banned from the DigitalOcean datacenter IP, and the Gemini free-tier quota is too small. NotebookLM (manual) replaced it. Don't schedule or rely on `auto_kol_update.py`.
 
 ## Conventions
 
