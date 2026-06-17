@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-16 23:41 +08
+> Last updated: 2026-06-18 03:03 +08
 
 ---
 
@@ -41,6 +41,15 @@ Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 Beyond pure ML, the bot's feature set and risk-management heuristics are informed by external
 market-view sources. Most recent reference: KOL analysis from **@crypto_punks (加密龐克)** —
 see [`notes/youtube-insights.md`](notes/youtube-insights.md) for the full digest.
+
+### KOL-insight pipeline (automated 2026-06-18)
+
+Risk-param updates flow from KOL YouTube videos through a mostly-automated pipeline:
+
+1. **Detection (VPS, always-on)** — `scripts/notify_new_kol_videos.py` runs on a VPS cron (`50 0,12 * * *`, 08:50/20:50 Taipei). RSS-only (no transcripts/Gemini, so the datacenter IP isn't blocked); on a new video from 加密龐克 / BTC飛揚 / BTC歐陽 it sends a Telegram alert and records the id in `notes/.kol_seen.json`.
+2. **Summarize + apply (local, while Claude Code is open)** — `scripts/kol_fetch.py` fetches each new video's transcript from the **local residential IP** (which YouTube does *not* block, unlike the VPS) into `notes/.kol_pending.json`; an hourly Claude Code task then summarizes each transcript into a dated `notes/youtube-insights.md` section, translates the consensus into `monitor_coins.py` / `main.py` constants, commits/pushes, deploys to the VPS, and Telegram-notifies what changed. This replaces the manual NotebookLM step *while Claude Code is running*; when it's closed, the VPS detection alert (step 1) is the fallback and summarization reverts to manual.
+
+> `scripts/auto_kol_update.py` (older Gemini auto-summarizer) is **unused** — `youtube_transcript_api` is IP-banned from the VPS and the Gemini free tier is too small. `notes/.kol_seen.json` / `.kol_pending.json` are per-host runtime state (git-ignored).
 
 Key concepts mapped to existing features:
 
@@ -402,6 +411,12 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-18（KOL insight 流程自動化：偵測+總結+套用）
+- **目標**：把「偵測新影片 → 總結 → 套參數」的人工流程自動化，使用者只需保持 Claude Code 開著
+- **偵測（VPS 常駐）**：`scripts/notify_new_kol_videos.py` + VPS cron `50 0,12 * * *`（8:50/20:50 台灣），純 RSS（不抓字幕/不用 Gemini，避開機房 IP 封鎖），有新片發 Telegram 並記入 `notes/.kol_seen.json`
+- **總結+套用（本機，Claude 開著時）**：`scripts/kol_fetch.py` 用**本機住宅 IP** 抓逐字稿（VPS 機房 IP 被 YouTube 封，本機不受影響）→ 每小時 Claude Code 排程把逐字稿總結成 insight 段落 → 翻成 `monitor_coins.py`/`main.py` 常數 → commit/push/部署 → TG 告知變動。取代手動 NotebookLM（Claude 關閉時退回 VPS 通知 + 手動）
+- `scripts/auto_kol_update.py`（舊 Gemini 自動摘要）標為**棄用**：YouTube 封 VPS IP 抓不到字幕 + Gemini 免費額度太小。`.kol_seen.json`/`.kol_pending.json` 為各機執行期狀態（git-ignore）
 
 ### 2026-06-16（KOL insight 更新：軋空續演 + Short-Squeeze Filter）
 - 依 `notes/youtube-insights.md` 2026-06-15~06-16 統整（NotebookLM 127 個來源，4 支新影片：加密龐克 ×1、BTC飛揚 ×2、BTC歐陽 ×1）更新 KOL 共識區間
