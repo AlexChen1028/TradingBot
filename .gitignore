@@ -23,3 +23,7 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# KOL 偵測執行期狀態（各機獨立，不進 git）
+notes/.kol_seen.json
+notes/.kol_pending.json
