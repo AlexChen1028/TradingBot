@@ -34,10 +34,11 @@ SEEN_FILE = REPO_ROOT / 'notes' / '.kol_seen.json'
 MONITOR_TOKEN    = os.getenv('MONITOR_TOKEN', '')
 MONITOR_CHAT_IDS = [i.strip() for i in os.getenv('MONITOR_CHAT_ID', '').split(',') if i.strip()]
 
+# channel_id 寫死（2026-06-19 解析）：避免每次 scrape youtube.com 被限流導致誤判「無新片」
 KOL_CHANNELS = [
-    {'handle': '@crypto_punks', 'channel_id': '', 'name': '加密龐克'},
-    {'handle': '@BTCfeiyang',   'channel_id': '', 'name': 'BTC飛揚'},
-    {'handle': '@BTC-ouyang',   'channel_id': '', 'name': 'BTC歐陽'},
+    {'handle': '@crypto_punks', 'channel_id': 'UCeeeGbipVKpz23A8_c3I3uA', 'name': '加密龐克'},
+    {'handle': '@BTCfeiyang',   'channel_id': 'UCvuvTVzo8W9I6QOyZCXlubg', 'name': 'BTC飛揚'},
+    {'handle': '@BTC-ouyang',   'channel_id': 'UCzZ49DculfIZv6W1X81pLlQ', 'name': 'BTC歐陽'},
 ]
 
 # 每個頻道 RSS 只取最新幾支比對（避免把整個歷史清單都當候選）

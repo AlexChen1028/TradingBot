@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-18 03:03 +08
+> Last updated: 2026-06-19 22:50 +08
 
 ---
 
@@ -112,7 +112,7 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-16: 65.2K–65.5K 防守線), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-19: 60K–61.1K 200週均線撿錢區), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
 - ETH-only gate (`ETH_RESISTANCE_ZONE` 1,800–1,820 / `ETH_SUPPORT_ZONE` 1,700–1,720 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 突破 1,700 暴漲百點，做空點上移至 1,800-1,820（關閉 1,700 附近做空）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,700–1,720 阻力轉支撐) (2026-06-16 KOL)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
@@ -411,6 +411,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-19（KOL 自動總結首次實跑 + 偵測可靠性修復）
+- **首次由 Claude 自動鏈完成**：本機抓加密龐克 6/17~6/19 逐字稿 → 自動總結 → 套參數（非 NotebookLM）
+- **BTC 三天 67K→62K**：`BTC_RESISTANCE_ZONE (66000,67500) → (64000,65500)`（跌破 65,500 後反彈高空帶下移：64,000 上週雙底頸線 / 65,500 破位轉壓）；`BTC_SUPPORT_ZONE (65200,65500) → (60000,61100)`（200 週均線≈61,097 熊市撿錢區 + 60K 大級別）。`near_support` 連動下移、`main.py` KEY zones 同步
+- **嚴禁地板追空**：資費低位 + 太多人做空 → 軋空風險（與 `squeeze_no_short` 同向）；微策略 STRC 脫錨「死亡螺旋」判定為噪音（非系統性風險）
+- ETH/COIN_BLACKLIST 維持（本批僅加密龐克有字幕，飛揚/歐陽無字幕未納入）
+- **🔧 偵測可靠性修復**：`kol_fetch.py`/`notify_new_kol_videos.py` 改用**寫死的 channel_id**（先前每次 scrape youtube.com 被限流 → `resolve_channel_id` 失敗 → 誤回「沒新片」假陰性）；`kol_fetch.py` 補 stdout utf-8（cp950 印中文標題 `UnicodeEncodeError`）
 
 ### 2026-06-18（KOL insight 流程自動化：偵測+總結+套用）
 - **目標**：把「偵測新影片 → 總結 → 套參數」的人工流程自動化，使用者只需保持 Claude Code 開著

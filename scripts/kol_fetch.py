@@ -20,6 +20,12 @@ from datetime import datetime, timezone, timedelta
 
 import requests
 
+# Windows 主控台預設 cp950，印中文標題會 UnicodeEncodeError → 強制 utf-8
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 try:
     import feedparser
 except Exception as e:
@@ -35,10 +41,12 @@ REPO_ROOT    = Path(__file__).resolve().parent.parent
 SEEN_FILE    = REPO_ROOT / 'notes' / '.kol_seen.json'
 PENDING_FILE = REPO_ROOT / 'notes' / '.kol_pending.json'
 
+# channel_id 寫死（2026-06-19 解析）：避免每次 scrape youtube.com 首頁被限流 →
+# 否則解析失敗會誤回 pending=0（假「沒新片」）。RSS 直接用 channel_id 穩定可靠。
 KOL_CHANNELS = [
-    {'handle': '@crypto_punks', 'name': '加密龐克'},
-    {'handle': '@BTCfeiyang',   'name': 'BTC飛揚'},
-    {'handle': '@BTC-ouyang',   'name': 'BTC歐陽'},
+    {'handle': '@crypto_punks', 'name': '加密龐克', 'channel_id': 'UCeeeGbipVKpz23A8_c3I3uA'},
+    {'handle': '@BTCfeiyang',   'name': 'BTC飛揚',  'channel_id': 'UCvuvTVzo8W9I6QOyZCXlubg'},
+    {'handle': '@BTC-ouyang',   'name': 'BTC歐陽',  'channel_id': 'UCzZ49DculfIZv6W1X81pLlQ'},
 ]
 WANT_LANGS      = ['zh-TW', 'zh-Hant', 'zh', 'zh-Hans', 'en']
 MAX_PER_CHANNEL = 6
@@ -106,8 +114,9 @@ def cmd_detect():
     seen = load_seen()
     pending = []
     for ch in KOL_CHANNELS:
-        cid = resolve_channel_id(ch['handle'])
+        cid = ch.get('channel_id') or resolve_channel_id(ch['handle'])
         if not cid:
+            print('  [%s] 無 channel_id（解析失敗），略過' % ch['name'])
             continue
         feed = feedparser.parse('https://www.youtube.com/feeds/videos.xml?channel_id=' + cid)
         for e in feed.entries[:MAX_PER_CHANNEL]:
