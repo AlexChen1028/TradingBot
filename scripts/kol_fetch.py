@@ -102,6 +102,19 @@ def get_transcript(vid):
         return None
 
 
+def whisper_transcript(vid):
+    """後備：對關閉字幕的影片下載音訊→faster-whisper 轉文字（lazy import，慢）。"""
+    try:
+        from kol_whisper import transcribe as _wt
+    except Exception as e:
+        print('  ⚠️ kol_whisper 不可用（%s），略過 Whisper 後備' % e)
+        return None
+    print('  🎙️ %s 無原生字幕 → Whisper 轉錄中（約數分鐘）…' % vid)
+    txt = _wt(vid)
+    print('  🎙️ %s Whisper %s' % (vid, ('成功 %d 字' % len(txt)) if txt else '失敗'))
+    return txt
+
+
 def cmd_mark(ids_csv):
     ids = [i.strip() for i in ids_csv.split(',') if i.strip()]
     seen = load_seen()
@@ -128,9 +141,15 @@ def cmd_detect():
             vid = e.get('yt_videoid', '')
             if not vid or vid in seen:
                 continue
-            txt = get_transcript(vid)
+            txt = get_transcript(vid)        # 快：原生字幕
+            source = 'caption' if txt else ''
             if not txt:
-                # 無字幕：逾 RETIRE_HOURS 仍無 → 退休（飛揚/歐陽 通常無字幕，避免清單無限長大）
+                # 字幕關閉（飛揚/歐陽）→ 音訊轉文字後備（慢，~5min/支）
+                txt = whisper_transcript(vid)
+                if txt:
+                    source = 'whisper'
+            if not txt:
+                # 字幕+Whisper 都失敗 → 逾 RETIRE_HOURS 退休，避免清單無限長大
                 pp = e.get('published_parsed')
                 if pp:
                     age_h = (now - datetime(*pp[:6], tzinfo=timezone.utc)).total_seconds() / 3600
@@ -144,6 +163,7 @@ def cmd_detect():
                 'url':   e.get('link', 'https://www.youtube.com/watch?v=' + vid),
                 'date':  (e.get('published', '') or '')[:10],
                 'transcript_ok': bool(txt),
+                'source': source,
                 'transcript': txt or '',
             })
     if retired:

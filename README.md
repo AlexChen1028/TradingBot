@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-20 21:25 +08
+> Last updated: 2026-06-21 02:47 +08
 
 ---
 
@@ -411,6 +411,11 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-21（Whisper 後備：處理關閉字幕的 KOL 影片）
+- BTC飛揚/BTC歐陽 頻道**關閉字幕**（`TranscriptsDisabled`），原生字幕完全抓不到 → 新增 `scripts/kol_whisper.py`：yt-dlp 抓 bestaudio（免系統 ffmpeg，用 faster-whisper 內建 PyAV 解碼）→ faster-whisper（CPU/int8，`small` 模型）轉中文逐字稿
+- `kol_fetch.py` 整合：原生字幕抓不到時自動呼叫 Whisper 後備（~5min/支）；轉錄成功即納入總結，不再因「無字幕」漏掉飛揚/歐陽觀點。逾 30h 字幕+Whisper 皆失敗才退休
+- 依賴：`pip install yt-dlp faster-whisper`（本機，免費；模型首次自動下載快取）
 
 ### 2026-06-20（kol_fetch 無字幕影片自動退休）
 - `kol_fetch.py`：無字幕影片逾 `RETIRE_HOURS`（30h）仍抓不到逐字稿 → 自動標記 seen 退休，停止每輪重撈。避免 BTC飛揚/BTC歐陽（通常無字幕）在 `.kol_pending.json` 無限累積（曾長到 9 支）；新片仍保留 30h 重試窗等延遲字幕
