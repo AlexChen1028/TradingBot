@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-19 22:50 +08
+> Last updated: 2026-06-20 21:25 +08
 
 ---
 
@@ -411,6 +411,9 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-20（kol_fetch 無字幕影片自動退休）
+- `kol_fetch.py`：無字幕影片逾 `RETIRE_HOURS`（30h）仍抓不到逐字稿 → 自動標記 seen 退休，停止每輪重撈。避免 BTC飛揚/BTC歐陽（通常無字幕）在 `.kol_pending.json` 無限累積（曾長到 9 支）；新片仍保留 30h 重試窗等延遲字幕
 
 ### 2026-06-19（KOL 自動總結首次實跑 + 偵測可靠性修復）
 - **首次由 Claude 自動鏈完成**：本機抓加密龐克 6/17~6/19 逐字稿 → 自動總結 → 套參數（非 NotebookLM）

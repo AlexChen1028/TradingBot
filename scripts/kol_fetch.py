@@ -110,9 +110,14 @@ def cmd_mark(ids_csv):
     print('marked %d seen, total=%d' % (len(ids), len(seen)))
 
 
+RETIRE_HOURS = 30   # 無字幕影片逾此時數仍抓不到 → 退休（標記 seen），停止每輪重撈
+
+
 def cmd_detect():
     seen = load_seen()
     pending = []
+    retired = []
+    now = datetime.now(timezone.utc)
     for ch in KOL_CHANNELS:
         cid = ch.get('channel_id') or resolve_channel_id(ch['handle'])
         if not cid:
@@ -124,6 +129,14 @@ def cmd_detect():
             if not vid or vid in seen:
                 continue
             txt = get_transcript(vid)
+            if not txt:
+                # 無字幕：逾 RETIRE_HOURS 仍無 → 退休（飛揚/歐陽 通常無字幕，避免清單無限長大）
+                pp = e.get('published_parsed')
+                if pp:
+                    age_h = (now - datetime(*pp[:6], tzinfo=timezone.utc)).total_seconds() / 3600
+                    if age_h > RETIRE_HOURS:
+                        retired.append(vid)
+                        continue
             pending.append({
                 'kol':   ch['name'],
                 'vid':   vid,
@@ -133,6 +146,10 @@ def cmd_detect():
                 'transcript_ok': bool(txt),
                 'transcript': txt or '',
             })
+    if retired:
+        seen.update(retired)
+        save_seen(seen)
+        print('  退休 %d 支逾 %dh 仍無字幕的影片（標記 seen）' % (len(retired), RETIRE_HOURS))
     PENDING_FILE.write_text(json.dumps(pending, ensure_ascii=False, indent=2), encoding='utf-8')
     ok = sum(1 for p in pending if p['transcript_ok'])
     print('pending=%d (transcript_ok=%d) -> %s' % (len(pending), ok, PENDING_FILE.name))
