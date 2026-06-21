@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-21 02:47 +08
+> Last updated: 2026-06-21 19:19 +08
 
 ---
 
@@ -112,8 +112,8 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-19: 60K–61.1K 200週均線撿錢區), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,800–1,820 / `ETH_SUPPORT_ZONE` 1,700–1,720 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 突破 1,700 暴漲百點，做空點上移至 1,800-1,820（關閉 1,700 附近做空）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,700–1,720 阻力轉支撐) (2026-06-16 KOL)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-21: 61K–62K，門檻 ≤62,620；62K 兩度守住的反彈起點/追空分界), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,700–1,740 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 1,700 突破未站穩→回落轉壓力，高空帶下修至 1,700-1,740（飛揚 1,704-1,706 / 歐陽 1,715-1,748）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,600–1,640 景象支撐) (2026-06-21 KOL)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -411,6 +411,13 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ---
 
 ## Changelog
+
+### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **首次納入飛揚/歐陽 Whisper 逐字稿**（6 支，6/19~6/21）→ 兩位 KOL 一致強烈看空、反彈無量、高點下移
+- **ETH 1,700 突破失效**：`ETH_RESISTANCE_ZONE (1800,1820) → (1700,1740)`（飛揚 1,704-1,706 / 歐陽 1,715-1,748 高空帶）；`ETH_SUPPORT_ZONE (1700,1720) → (1600,1640)`（1,700 由支撐轉回壓力，新支撐＝1,618 景象位/1,608 追空線）→ **解除 1,700 附近禁空**，讓 ETH 在現價 ~1,715 可逢高做空
+- **BTC 支撐上移**：`BTC_SUPPORT_ZONE (60000,61100) → (61000,62000)`（62,000 兩度測試守住＝反彈起點/追空分界；61K≈200週均線深支撐）；`near_support` 追空禁令門檻連動上移至 BTC ≤ 62,620
+- **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
+- 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 
 ### 2026-06-21（Whisper 後備：處理關閉字幕的 KOL 影片）
 - BTC飛揚/BTC歐陽 頻道**關閉字幕**（`TranscriptsDisabled`），原生字幕完全抓不到 → 新增 `scripts/kol_whisper.py`：yt-dlp 抓 bestaudio（免系統 ffmpeg，用 faster-whisper 內建 PyAV 解碼）→ faster-whisper（CPU/int8，`small` 模型）轉中文逐字稿
