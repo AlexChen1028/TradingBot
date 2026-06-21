@@ -42,13 +42,15 @@ Beyond pure ML, the bot's feature set and risk-management heuristics are informe
 market-view sources. Most recent reference: KOL analysis from **@crypto_punks (加密龐克)** —
 see [`notes/youtube-insights.md`](notes/youtube-insights.md) for the full digest.
 
-### KOL-insight pipeline (automated 2026-06-18)
+### KOL-insight pipeline (fully automated 2026-06-21)
 
-Risk-param updates flow from KOL YouTube videos through a mostly-automated pipeline:
+Risk-param updates flow from KOL YouTube videos through a fully-automated hourly pipeline (while Claude Code is open):
 
-1. **Detection (VPS, always-on)** — `scripts/notify_new_kol_videos.py` runs on a VPS cron (`50 0,12 * * *`, 08:50/20:50 Taipei). RSS-only (no transcripts/Gemini, so the datacenter IP isn't blocked); on a new video from 加密龐克 / BTC飛揚 / BTC歐陽 it sends a Telegram alert and records the id in `notes/.kol_seen.json`.
-2. **Summarize + apply (local, while Claude Code is open)** — `scripts/kol_fetch.py` fetches each new video's transcript from the **local residential IP** (which YouTube does *not* block, unlike the VPS) into `notes/.kol_pending.json`; an hourly Claude Code task then summarizes each transcript into a dated `notes/youtube-insights.md` section, translates the consensus into `monitor_coins.py` / `main.py` constants, commits/pushes, deploys to the VPS, and Telegram-notifies what changed. This replaces the manual NotebookLM step *while Claude Code is running*; when it's closed, the VPS detection alert (step 1) is the fallback and summarization reverts to manual.
+1. **Detect + transcribe (local, hourly)** — `scripts/kol_fetch.py` runs on the **local residential IP** (which YouTube does *not* block, unlike the VPS). It reads the channels' RSS, diffs `notes/.kol_seen.json`, and fetches transcripts for new 加密龐克 / BTC飛揚 / BTC歐陽 videos — native captions first, falling back to `scripts/kol_whisper.py` (yt-dlp + faster-whisper audio→text) for caption-disabled channels — into `notes/.kol_pending.json`.
+2. **Summarize + apply** — an hourly Claude Code task summarizes each `transcript_ok` entry into a dated `notes/youtube-insights.md` section (**replacing NotebookLM**, which has no API), translates *clear consensus shifts* into `monitor_coins.py` / `main.py` constants, commits/pushes, deploys to the VPS, and Telegram-notifies what changed. A video that only reaffirms current params appends the insight but leaves constants/deploy untouched.
 
+> **The VPS detection-notify cron (`notify_new_kol_videos.py`, `50 0,12 * * *`) was removed 2026-06-21** — it sent an 08:50/20:50 "go run NotebookLM" Telegram alert, which is obsolete now that detection+summarize+apply is automatic. The script is kept (re-add the cron, message reworded, only if a closed-Claude fallback is wanted; note: with it gone there is **no new-video detection while Claude Code is closed**).
+>
 > `scripts/auto_kol_update.py` (older Gemini auto-summarizer) is **unused** — `youtube_transcript_api` is IP-banned from the VPS and the Gemini free tier is too small. `notes/.kol_seen.json` / `.kol_pending.json` are per-host runtime state (git-ignored).
 
 Key concepts mapped to existing features:

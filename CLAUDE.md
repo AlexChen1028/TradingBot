@@ -58,13 +58,15 @@ There is **no test suite, linter, or build step** — `_test_api.py` / `_test_mo
 
 ## KOL-insight workflow (project-specific)
 
-This project's risk parameters are driven by a recurring part-automated, part-manual pipeline, not just backtests. The real flow (as of 2026-06-18):
+This project's risk parameters are driven by a recurring pipeline, not just backtests. The real flow (as of 2026-06-21) is now **fully automated** while a Claude Code session is open:
 
-1. **Detection — automated.** `scripts/notify_new_kol_videos.py` runs on a VPS cron (`50 0,12 * * *` = 08:50 / 20:50 Taipei). It reads only the KOL channels' YouTube RSS (no transcripts, no Gemini), diffs against `notes/.kol_seen.json`, and sends a Telegram alert (via `MONITOR_TOKEN`/`MONITOR_CHAT_ID`) listing any new videos, then records them so it won't re-alert. RSS is not IP-banned from the VPS, so this works unattended.
-2. **Summarization — manual.** The user takes the alerted videos into **NotebookLM** (no API), gets a digest, and pastes a new dated section into `notes/youtube-insights.md`. This is the only step that requires human action.
-3. **Code-apply — automated/assisted.** When the user says "我更新了 insight，幫我更新 code" (or via the session-only daily Claude cron), read the newest dated section of `notes/youtube-insights.md` and translate the consensus (support/resistance zones, long/short bias, coin blacklist changes) into the constants at the top of `monitor_coins.py` (e.g. `BTC_SUPPORT_ZONE`, `BTC_RESISTANCE_ZONE`, `SHORT_BIAS`, `COIN_BLACKLIST`, the `near_support` gate; `main.py` has its own `KEY_SUPPORT_ZONE`/`KEY_RESISTANCE_ZONE`), then commit + push + deploy to the VPS.
+1. **Detect + transcribe — automated (local).** An hourly Claude Code cron runs `scripts/kol_fetch.py` on the **local (residential) IP**: reads the KOL channels' RSS, diffs against `notes/.kol_seen.json`, and fetches transcripts for new videos — native captions via `youtube_transcript_api`, falling back to `scripts/kol_whisper.py` (yt-dlp + faster-whisper audio→text) for caption-disabled channels (BTC飛揚/BTC歐陽). Results go to `notes/.kol_pending.json`. (Cloud/VPS is YouTube-IP-banned for transcripts, so this must run locally.)
+2. **Summarize — automated (Claude).** The same hourly cron has Claude read each `transcript_ok=true` entry, write a dated section into `notes/youtube-insights.md` in the existing format, **replacing NotebookLM** (which had no API). No human step.
+3. **Code-apply + deploy — automated.** Claude translates only *clear consensus shifts* into the constants at the top of `monitor_coins.py` (`BTC_SUPPORT_ZONE`, `BTC_RESISTANCE_ZONE`, `ETH_*_ZONE`, `SHORT_BIAS`, `COIN_BLACKLIST`, `near_support`/`squeeze_no_short` gates; `main.py` has `KEY_SUPPORT_ZONE`/`KEY_RESISTANCE_ZONE`), updates README, commits + pushes, deploys to the VPS (`git pull --ff-only` + restart `coin-monitor`), and sends a Telegram summary of what changed. If a new video only reaffirms current params, it appends the insight but leaves constants/deploy untouched. Then marks the videos seen via `kol_fetch.py --mark`.
 
-> **Note:** `scripts/auto_kol_update.py` (the older Gemini pipeline that fetched transcripts → summarized → auto-applied) is **NOT used** and does not work on the VPS: `youtube_transcript_api` is IP-banned from the DigitalOcean datacenter IP, and the Gemini free-tier quota is too small. NotebookLM (manual) replaced it. Don't schedule or rely on `auto_kol_update.py`.
+> **Removed/unused:**
+> - `scripts/notify_new_kol_videos.py` (VPS RSS→Telegram "go run NotebookLM" alert, cron `50 0,12 * * *`) was the old manual-summarize trigger. **Cron removed 2026-06-21** at the user's request — obsolete now that step 1–3 are automatic. Script kept; re-add the cron (with reworded message) only if a closed-Claude fallback is wanted (note: with it gone, no detection happens while Claude Code is closed).
+> - `scripts/auto_kol_update.py` (old Gemini pipeline) is **NOT used** and does not work on the VPS: `youtube_transcript_api` is IP-banned from the datacenter IP, and the Gemini free-tier quota is too small. Don't schedule or rely on it.
 
 ## Conventions
 
