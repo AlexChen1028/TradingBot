@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-22 18:16 +08
+> Last updated: 2026-06-22 23:02 +08
 
 ---
 
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/22（加密龐克 BTC，原生字幕）**：三方 6/22 收斂——週線偏弱、6 萬 5 之下小區間震盪，64,200 近壓、**需收復 65,500 才轉強**（站上才走大級別雙底）。鏈上大鯨魚＋訂單簿顯示 5-6 萬買盤雄厚、微策略續買 520 BTC，**短期難破 6 萬、更難見 5 萬以下**（強化 `BTC_SUPPORT_ZONE` 62K 守得住、淡化速破 59,800 暴跌風險）。所有點位已落在現有區間內，**參數不變、不重啟**
 - **6/22（飛揚 BTC 週線，Whisper）**：週線「勉強空方炮」（下跌動能衰減、空頭仍占優），維持高空劇本——64,500 強壓、65-65.5K 為空單目標、**跌破 59,800 前低才確認延續下跌**、守住則走 W 底上看 80K+。ETH 1,700 未跌破不可追空。與歐陽 6/22 兩位獨立收斂於同一劇本，所有點位已在現有 `BTC_RESISTANCE_ZONE (64000,65500)`／`BTC_SUPPORT_ZONE (61000,62000)`／`ETH_*` 區間內，**參數不變、不重啟**（59,800 列入後續監看的多空生死分界）
 - **6/22（歐陽 BTC，Whisper）+ 新增 SOL 閘門**：無量反彈趨勢已結束、波動收窄等多空決戰。改採「即時更動」方針後落地歐陽連兩日的 SOL 點位 → 新增 `SOL_RESISTANCE_ZONE (74,76)`（高空帶）、`SOL_SUPPORT_ZONE (69,72)`（止盈/支撐），及 SOL scan 閘門（仿 ETH：弱勢禁多、69-72 禁地板追空）。BTC/ETH 區間維持（64.5K 阻力/63K 下軌、ETH 1,735 高空均在現有區間內）
 
