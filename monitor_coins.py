@@ -50,6 +50,9 @@ ETH_RESISTANCE_ZONE = (1_700, 1_740)  # 高空帶（飛揚 1,704-1,706 承壓高
 ETH_SUPPORT_ZONE    = (1_600, 1_640)  # 景象支撐帶（飛揚：1,618 跌破才有下跌空間，1,608 追空）；此區未跌破嚴禁追空
 ETH_LONG_ZONE       = (1_370, 1_390)  # 悲觀二探接多區（僅 BTC 跌破6萬才看此位）；做多僅此區放行，同區禁空
 ETH_NO_LONG_ABOVE   = 1_700           # 1,700 以上一律不做多（ETH 大級別仍偏空，僅逢高做空）
+# SOL 關鍵區間（KOL 共識，2026-06-22 歐陽）— 連兩日明確高空點位，落地為 SOL 專屬閘門
+SOL_RESISTANCE_ZONE = (74, 76)        # 高空進場帶（歐陽：74-75 開空、76 加碼，雙頂結構）；此區優先放行做空、禁做多
+SOL_SUPPORT_ZONE    = (69, 72)        # 止盈/支撐帶（歐陽：目標回 69，72 為昨日低點）；地板追空 R:R 差，此區禁空
 POSITIONS_FILE      = 'positions_altcoin.json'
 PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
@@ -1466,6 +1469,17 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
                     continue
                 if d == -1 and ETH_SUPPORT_ZONE[0] <= px <= ETH_SUPPORT_ZONE[1]:
                     print(f"  🛑 ETH 在阻力轉支撐帶 {ETH_SUPPORT_ZONE[0]:,}-{ETH_SUPPORT_ZONE[1]:,}（現價 {px:,.0f}），未跌破嚴禁追空")
+                    continue
+            # SOL 弱勢專屬閘門（2026-06-22 歐陽：74-76 高空、目標 69-72；弱勢禁多，地板禁追空）
+            if symbol == 'SOL/USDT:USDT':
+                px = result['price']
+                # 做多：SOL 偏空，未到止盈/支撐帶以上一律不做多（僅在 69-72 接回彈，其餘禁多）
+                if d == 1 and px > SOL_SUPPORT_ZONE[1] * 1.01:
+                    print(f"  🚫 SOL 做多跳過（弱勢，未到 {SOL_SUPPORT_ZONE[0]}-{SOL_SUPPORT_ZONE[1]} 支撐帶，現價 {px:.2f}）")
+                    continue
+                # 做空：禁止在止盈/支撐帶 69-72 地板追空（R:R 差，為目標非進場）
+                if d == -1 and SOL_SUPPORT_ZONE[0] <= px <= SOL_SUPPORT_ZONE[1]:
+                    print(f"  🛑 SOL 在止盈/支撐帶 {SOL_SUPPORT_ZONE[0]}-{SOL_SUPPORT_ZONE[1]}（現價 {px:.2f}），地板追空 R:R 差，跳過")
                     continue
             if d == 1 and result.get('rsi', 50) >= 80:
                 continue  # RSI 超買，跳過做多

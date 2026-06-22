@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-22 14:26 +08
+> Last updated: 2026-06-22 14:36 +08
 
 ---
 
@@ -116,6 +116,7 @@ Gaps currently noted (see notes file):
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
 - `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-21: 61K–62K，門檻 ≤62,620；62K 兩度守住的反彈起點/追空分界), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
 - ETH-only gate (`ETH_RESISTANCE_ZONE` 1,700–1,740 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): 1,700 突破未站穩→回落轉壓力，高空帶下修至 1,700-1,740（飛揚 1,704-1,706 / 歐陽 1,715-1,748）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside either support band (1,356–1,404 插針反彈 or 1,600–1,640 景象支撐) (2026-06-21 KOL)
+- SOL-only gate (`SOL_RESISTANCE_ZONE` 74–76 / `SOL_SUPPORT_ZONE` 69–72, 2026-06-22 歐陽): SOL is short-biased — LONG skipped unless price ≤ ~72.7 (only buy the 69–72 bounce); SHORT skipped while inside the 69–72 take-profit/support floor (地板追空 R:R 差). 74–76 is the preferred high-short entry (74-75 開空、76 加碼，雙頂)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -421,7 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
-- **6/22 追加**（歐陽 BTC，Whisper）：無量反彈趨勢已結束、波動收窄等多空決戰；BTC 64.5K 阻力/63K 下軌、ETH 1,735 高空、SOL 74-76 開空；**均在現有參數涵蓋內，無新變動**（僅 append insight）
+- **6/22（歐陽 BTC，Whisper）+ 新增 SOL 閘門**：無量反彈趨勢已結束、波動收窄等多空決戰。改採「即時更動」方針後落地歐陽連兩日的 SOL 點位 → 新增 `SOL_RESISTANCE_ZONE (74,76)`（高空帶）、`SOL_SUPPORT_ZONE (69,72)`（止盈/支撐），及 SOL scan 閘門（仿 ETH：弱勢禁多、69-72 禁地板追空）。BTC/ETH 區間維持（64.5K 阻力/63K 下軌、ETH 1,735 高空均在現有區間內）
 
 ### 2026-06-21（Whisper 後備：處理關閉字幕的 KOL 影片）
 - BTC飛揚/BTC歐陽 頻道**關閉字幕**（`TranscriptsDisabled`），原生字幕完全抓不到 → 新增 `scripts/kol_whisper.py`：yt-dlp 抓 bestaudio（免系統 ffmpeg，用 faster-whisper 內建 PyAV 解碼）→ faster-whisper（CPU/int8，`small` 模型）轉中文逐字稿
