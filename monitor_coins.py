@@ -45,14 +45,14 @@ WATCH_ALWAYS   = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT']
 BTC_RESISTANCE_ZONE = (64_000, 65_500)  # 反彈高空帶（歐陽：64,000-65,000 直接開空、64,500 加碼；飛揚：64,000 高空）；上方硬壓 66,000-67,000（歐陽通道頂/飛揚布林上軌）；嚴禁地板追空（軋空風險）
 BTC_SUPPORT_ZONE    = (61_000, 62_000)  # 62,000 兩度測試守住＝反彈起點/追空分界（飛揚：追空要 62K 以下；歐陽：第三度測試恐破位二探，不可再接貨）；61K≈200週均線深支撐；near_support 追空禁令連動上移
 BTC_HARD_STOP       = 69_150            # 站上 69,138 大級別關鍵位才轉空（週線 EMA 缺口）
-# ETH 關鍵區間（2026-06-22 晚間飛揚更新）— ETH 再破 1,700-1,750 暴漲至 ~1,775，空防炮失效、多頭轉強，高空帶上移；禁在 1,740-1,800 突破區追空
-ETH_RESISTANCE_ZONE = (1_800, 1_850)  # 高空帶（飛揚 6/22 晚間：1,800 整數關/3.618 進場、1,850 前高、上看 1,900）；1,740 以下為突破多頭區，未到此帶不追空（防軋空）
+# ETH 關鍵區間（2026-06-23 飛揚更新）— ETH 反彈在 1,779 見頂回落（現 ~1,716），反彈轉弱、結構仍偏空；高空帶下緣修至 1,780（飛揚 6/23 改框壓制 1,780-1,800）
+ETH_RESISTANCE_ZONE = (1_780, 1_850)  # 高空帶（飛揚 6/23：1,780-1,800 壓制、ETH 實際 1,779 見頂；上 1,850 前高、上看 1,900）；1,780 以下為突破多頭區，未到此帶不追空（防軋空）
 ETH_SUPPORT_ZONE    = (1_600, 1_640)  # 景象支撐帶（飛揚：1,618 跌破才有下跌空間，1,608 追空）；此區未跌破嚴禁追空
 ETH_LONG_ZONE       = (1_370, 1_390)  # 悲觀二探接多區（僅 BTC 跌破6萬才看此位）；做多僅此區放行，同區禁空
 ETH_NO_LONG_ABOVE   = 1_700           # 1,700 以上一律不做多（ETH 大級別仍偏空，僅逢高做空）
 # SOL 關鍵區間（KOL 共識，2026-06-22 歐陽）— 連兩日明確高空點位，落地為 SOL 專屬閘門
 SOL_RESISTANCE_ZONE = (74, 76)        # 高空進場帶（歐陽：74-75 開空、76 加碼，雙頂結構）；此區優先放行做空、禁做多
-SOL_SUPPORT_ZONE    = (69, 72)        # 止盈/支撐帶（歐陽：目標回 69，72 為昨日低點）；地板追空 R:R 差，此區禁空
+SOL_SUPPORT_ZONE    = (68, 72)        # 止盈/支撐帶（歐陽 6/23：目標下移至 68，72 為前日低點）；地板追空 R:R 差，此區禁空
 POSITIONS_FILE      = 'positions_altcoin.json'
 PENDING_CANCELS_FILE = 'pending_cancels.json'
 ALTCOIN_TRADES_FILE = 'altcoin_trades.jsonl'
@@ -1455,7 +1455,7 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             if d == 1 and SHORT_BIAS and symbol in set(WATCH_ALWAYS) and result['n'] < min_sig + 1:
                 print(f"  📉 SHORT_BIAS: {symbol.split('/')[0]} LONG 信號不足（需 {min_sig+1}，有 {result['n']}），跳過")
                 continue
-            # ETH 弱勢專屬閘門（2026-06-22 晚間飛揚：ETH 再破 1,700-1,750 暴漲、空防炮失效，空點上移 1,800-1,850；1,740-1,800 突破多頭區禁追空；做多仍僅 1,370-1,390 悲觀二探）
+            # ETH 弱勢專屬閘門（2026-06-23 飛揚：ETH 反彈在 1,779 見頂回落、轉弱，高空帶 1,780-1,850；1,640-1,780 突破多頭區禁追空；做多仍僅 1,370-1,390 悲觀二探）
             if symbol == 'ETH/USDT:USDT':
                 px = result['price']
                 # 做多：弱勢，僅在悲觀二探區 1,370-1,390 放行（其餘一律不做多）

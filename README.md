@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-23 01:10 +08
+> Last updated: 2026-06-23 15:13 +08
 
 ---
 
@@ -115,8 +115,8 @@ Gaps currently noted (see notes file):
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
 - `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-21: 61K–62K，門檻 ≤62,620；62K 兩度守住的反彈起點/追空分界), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,800–1,850 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 再破 1,700-1,750 暴漲至 ~1,775、空防炮失效→高空帶上移 1,800-1,850（飛揚 6/22 晚間：1,800 整數關/3.618、1,850 前高、上看 1,900）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、深支撐 (1,600–1,640)、**或突破多頭區 (1,640–1,800，未到新高空帶不追空，防軋空)** (2026-06-22 晚間飛揚)
-- SOL-only gate (`SOL_RESISTANCE_ZONE` 74–76 / `SOL_SUPPORT_ZONE` 69–72, 2026-06-22 歐陽): SOL is short-biased — LONG skipped unless price ≤ ~72.7 (only buy the 69–72 bounce); SHORT skipped while inside the 69–72 take-profit/support floor (地板追空 R:R 差). 74–76 is the preferred high-short entry (74-75 開空、76 加碼，雙頂)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,780–1,850 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 反彈在 1,779 見頂回落（現 ~1,716）、轉弱→高空帶下緣修至 1,780（飛揚 6/23 改框壓制 1,780-1,800；上 1,850 前高、上看 1,900）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、深支撐 (1,600–1,640)、**或突破多頭區 (1,640–1,780，未到高空帶不追空，防軋空)** (2026-06-23 飛揚)
+- SOL-only gate (`SOL_RESISTANCE_ZONE` 74–76 / `SOL_SUPPORT_ZONE` 68–72, 2026-06-23 歐陽): SOL is short-biased — LONG skipped unless price ≤ ~72.7 (only buy the 68–72 bounce); SHORT skipped while inside the 68–72 take-profit/support floor (地板追空 R:R 差，歐陽 6/23 目標下移至 68). 74–76 is the preferred high-short entry (74.5 名牌做空、76 加碼，大 M 頂)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
 **Macro filter (hourly):**
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/23 上午（飛揚＋歐陽 BTC，Whisper）★微調★**：反彈轉弱、兩位重申看跌。BTC 昨彈 66K 收長上影回落至 ~64K，飛揚「漲只是過程跌才是結果」、歐陽「跌破下軌看 62.5K→60K 前底」（BTC 區間不改，破位目標在追空分界下方）。微調：`ETH_RESISTANCE_ZONE (1800,1850) → (1780,1850)`（飛揚 6/23 壓制改框 1,780-1,800、ETH 實際 1,779 見頂；突破多頭區禁空閘門連動為 1,640-1,780）、`SOL_SUPPORT_ZONE (69,72) → (68,72)`（歐陽 SOL 止盈目標 69→68）。**已部署並重啟 coin-monitor**
 - **6/23 凌晨（飛揚 6/22 晚間 ETH，Whisper）★參數變動★**：飛揚 ETH 空單被打損認虧 1,500 點、空防炮失效，**ETH 再破 1,700-1,750 暴漲至 ~1,775、多頭轉強**。→ `ETH_RESISTANCE_ZONE (1700,1740) → (1800,1850)`（1,800 整數關/3.618 進場、1,850 前高、上看 1,900）＋**新增 ETH scan 閘門：突破多頭區 1,640-1,800 禁追空**（修掉「bot 在 1,775 軋空帶照樣做空」的接線 bug，正是飛揚被打損的位置）。做多維持鎖死（`ETH_NO_LONG_ABOVE 1,700`，結構仍偏空）。**真實接線變動 → 已部署並重啟 coin-monitor**
 - **6/22（加密龐克 BTC，原生字幕）**：三方 6/22 收斂——週線偏弱、6 萬 5 之下小區間震盪，64,200 近壓、**需收復 65,500 才轉強**（站上才走大級別雙底）。鏈上大鯨魚＋訂單簿顯示 5-6 萬買盤雄厚、微策略續買 520 BTC，**短期難破 6 萬、更難見 5 萬以下**（強化 `BTC_SUPPORT_ZONE` 62K 守得住、淡化速破 59,800 暴跌風險）。所有點位已落在現有區間內，**參數不變、不重啟**
 - **6/22（飛揚 BTC 週線，Whisper）**：週線「勉強空方炮」（下跌動能衰減、空頭仍占優），維持高空劇本——64,500 強壓、65-65.5K 為空單目標、**跌破 59,800 前低才確認延續下跌**、守住則走 W 底上看 80K+。ETH 1,700 未跌破不可追空。與歐陽 6/22 兩位獨立收斂於同一劇本，所有點位已在現有 `BTC_RESISTANCE_ZONE (64000,65500)`／`BTC_SUPPORT_ZONE (61000,62000)`／`ETH_*` 區間內，**參數不變、不重啟**（59,800 列入後續監看的多空生死分界）
