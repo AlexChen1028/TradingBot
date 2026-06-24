@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-23 23:34 +08
+> Last updated: 2026-06-24 11:58 +08
 
 ---
 
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/24 上午（歐陽 BTC/SOL，Whisper）**：歐陽 BTC 砸前低 62K 後反車回 63K、**62K 空轉多持多單博反彈**、今日暫不布局 BTC 空——但**逆飛揚/龐克（仍看 60K）**，單一戰術多單、不構成共識 → **不翻 BTC、不解除禁空、參數不變**（62K 以下早由 `near_support` 禁追空）。SOL 精準兌現：74 開空、**68 目標到並止盈 30%**，驗證上一輪 `SOL_SUPPORT_ZONE 69→68`。**未改常數、未重啟**（監看 BTC 62K 反彈重回通道 vs 破位下 60K）
 - **6/23 晚間（加密龐克＋飛揚 ETH，字幕/Whisper）**：反彈失敗、續看跌，**行情正照框架走、參數不變**。BTC 精準打 65,500（區間上緣）受阻摔回、下看 61K→60K→破前低 59,900（鯨魚 5-6 萬掛單等抄底）；飛揚破位追空（63-63.5K）已驗證。ETH 跌一天、扎 1,604 強支撐小反彈仍高位做空——**ETH 跌進現有 `ETH_SUPPORT_ZONE (1600,1640)`，bot 在 1,604 正確擋住追空**。所有點位落在現有區間，**未改常數、未重啟**（監看 BTC 59,900／ETH 1,592 是否破位）
 - **6/23 上午（飛揚＋歐陽 BTC，Whisper）★微調★**：反彈轉弱、兩位重申看跌。BTC 昨彈 66K 收長上影回落至 ~64K，飛揚「漲只是過程跌才是結果」、歐陽「跌破下軌看 62.5K→60K 前底」（BTC 區間不改，破位目標在追空分界下方）。微調：`ETH_RESISTANCE_ZONE (1800,1850) → (1780,1850)`（飛揚 6/23 壓制改框 1,780-1,800、ETH 實際 1,779 見頂；突破多頭區禁空閘門連動為 1,640-1,780）、`SOL_SUPPORT_ZONE (69,72) → (68,72)`（歐陽 SOL 止盈目標 69→68）。**已部署並重啟 coin-monitor**
 - **6/23 凌晨（飛揚 6/22 晚間 ETH，Whisper）★參數變動★**：飛揚 ETH 空單被打損認虧 1,500 點、空防炮失效，**ETH 再破 1,700-1,750 暴漲至 ~1,775、多頭轉強**。→ `ETH_RESISTANCE_ZONE (1700,1740) → (1800,1850)`（1,800 整數關/3.618 進場、1,850 前高、上看 1,900）＋**新增 ETH scan 閘門：突破多頭區 1,640-1,800 禁追空**（修掉「bot 在 1,775 軋空帶照樣做空」的接線 bug，正是飛揚被打損的位置）。做多維持鎖死（`ETH_NO_LONG_ABOVE 1,700`，結構仍偏空）。**真實接線變動 → 已部署並重啟 coin-monitor**
