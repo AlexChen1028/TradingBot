@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-25 01:07 +08
+> Last updated: 2026-06-25 15:16 +08
 
 ---
 
@@ -114,7 +114,7 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-21: 61K–62K，門檻 ≤62,620；62K 兩度守住的反彈起點/追空分界), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-25: 59K–60K，門檻 ≤60,600；59K 放量二探企穩、60K 关口別地板空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
 - ETH-only gate (`ETH_RESISTANCE_ZONE` 1,670–1,720 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 突破失敗、跌回 1,604-1,692 區間→operative 壓制下移至 1,670-1,690（飛揚 6/24 連兩日精準承壓、今 1,692 拒絕）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、深支撐 (1,600–1,640)、**或突破多頭區 (1,640–1,670，未到高空帶不追空)**；shorts 放行 ≥1,670（接 1,670-1,690 反彈承壓）及破 <1,600 追空 (2026-06-24 飛揚)
 - SOL-only gate (`SOL_RESISTANCE_ZONE` 74–76 / `SOL_SUPPORT_ZONE` 68–72, 2026-06-23 歐陽): SOL is short-biased — LONG skipped unless price ≤ ~72.7 (only buy the 68–72 bounce); SHORT skipped while inside the 68–72 take-profit/support floor (地板追空 R:R 差，歐陽 6/23 目標下移至 68). 74–76 is the preferred high-short entry (74.5 名牌做空、76 加碼，大 M 頂)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/25 下午（飛揚＋歐陽 BTC 二探，Whisper）★參數變動★**：方向選擇兌現——BTC 放量**暴跌破 62K → 59K**、現反彈 ~61K（先前監看的「波動率信號＋61,097 破位」＝向下）。兩位共識 **59-60K=二探/最後支撐、千万别地板空、反彈帶 61.5-63K**（歐陽偏 60K 做多博反彈至 63K、飛揚偏 61-61.5K 高空續空）。BTC 區間整體下移：`BTC_SUPPORT_ZONE (61000,62000) → (59000,60000)`（near_support 連動 ≤60,600，護 60K 地板）、`BTC_RESISTANCE_ZONE (64000,65500) → (63000,64000)`、`main.py` KEY zones 同步。山寨別做多、做多首選 BTC。**已部署並重啟 coin-monitor**（監看 60K 守住反彈 63K vs 失守創新低）
 - **6/25 凌晨（飛揚 6/24 晚間 ETH，Whisper）★參數變動★**：修 stale 參數——ETH 6/22 衝 1,775 的突破已失敗、跌回 1,604-1,692 區間，operative 壓制下移至 1,670-1,690（飛揚連兩日精準承壓、今 1,692 拒絕）。舊 `(1780,1850)` 高空帶讓 bot 整個 ETH 實際區間都不做空 → `ETH_RESISTANCE_ZONE (1780,1850) → (1670,1720)`，突破多頭區禁空閘門連動收窄 1,640-1,670、**shorts 放行 ≥1,670（接 1,690 反彈承壓）及破 <1,600 追空**。BTC 暴跌至 61,300（逼近支撐、與區間一致不改）。**已部署並重啟 coin-monitor**
 - **6/24 晚間（加密龐克 BTC，原生字幕）**：重申 BTC 60-65K 區間（POC 62,700、邊界 65,500/61,097）。兩宏觀信號但**無方向性、不改參數**：⚡波動率信號亮燈＝大波動將至（歷史暴跌前密集亮燈、先誘多再爆破）；🔗長期持有者已實現市值佔比 **78%**（史上第 3 次，宏觀偏多、熊市可能剩 2-3 個月）。皆無可落地方向性常數，**未改常數、未重啟**（監看 65,500 假突破 vs 破 61,097，波動率信號暗示突破將近）
 - **6/24 下午（飛揚 BTC/ZEC，Whisper）**：飛揚重申大高空「反彈越猛我越開心」，**把 BTC 天平拉回 2/3 看空**（飛揚+龐克空、歐陽戰術多）。BTC 62K 撐住、頂 64K 未破、今日壓制 63.5-64K、下看 61.2K/60K。ETH 1,604-1,690 窄幅 chop（bot no-trade 避震正確）、ZEC 421-423 空（已由 SHORT_BIAS 偏向）。所有點位落在現有 constants，**未改常數、未重啟**（監看 BTC 62K 是否終破位）
