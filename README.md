@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-26 22:03 +08
+> Last updated: 2026-06-26 23:08 +08
 
 ---
 
@@ -115,7 +115,7 @@ Gaps currently noted (see notes file):
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
 - `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-26: 58K–59K，門檻 ≤59,590；跌破二探創熊市新低 58K、別地板空防報復性軋空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,670–1,720 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 突破失敗、跌回 1,604-1,692 區間→operative 壓制下移至 1,670-1,690（飛揚 6/24 連兩日精準承壓、今 1,692 拒絕）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、深支撐 (1,600–1,640)、**或突破多頭區 (1,640–1,670，未到高空帶不追空)**；shorts 放行 ≥1,670（接 1,670-1,690 反彈承壓）及破 <1,600 追空 (2026-06-24 飛揚)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,580–1,600 / `ETH_SUPPORT_ZONE` 1,500–1,520 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 隨 BTC 續跌至 1,500-1,600「純減錢」→高空帶下移 1,580-1,600（飛揚 6/26：最好機會 1,600、MA5 缺口 1,603）、關鍵支撐 1,500-1,510（2618）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、關鍵支撐 (1,500–1,520)、**或突破多頭區 (1,520–1,580，未到高空帶不追空)**；shorts 放行 ≥1,580（接 1,580-1,600 壓制）及破 <1,500 追空 (2026-06-26 飛揚)
 - SOL-only gate (`SOL_RESISTANCE_ZONE` 70–72 / `SOL_SUPPORT_ZONE` 66–68, 2026-06-25 飛揚): SOL 已跌至 64–72 區間，high-short 帶下移。SOL is short-biased — LONG skipped unless price ≤ ~68.7 (only buy the 66–68 bounce); SHORT skipped while inside the 66–68 take-profit/support floor (地板追空 R:R 差，飛揚最低打 64.6、跌破 66–68 追空). 70–72 is the preferred high-short entry (飛揚 6/25：SOL 不硬很軟、M 頂續空)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/26 深夜（飛揚 ETH 續跌，Whisper）★ETH 參數變動★**：ETH「純減錢」隨 BTC 跌至 1,500-1,600、stale 下移。`ETH_RESISTANCE_ZONE (1670,1720) → (1580,1600)`（飛揚：高空帶 1,580-1,600、最好 1,600、MA5 缺口 1,603）、`ETH_SUPPORT_ZONE (1600,1640) → (1500,1520)`（1,500-1,510＝2618 關鍵支撐、空單跑路；突破多頭區禁空連動 1,520-1,580、shorts 放行 ≥1,580 及破 <1,500 追空）。BTC 重申高空（58.3K 反彈做空、續高空、參數不變）。**已部署並重啟 coin-monitor**
 - **6/26 晚間（加密龐克 BTC 血崩，原生字幕）**：重申看跌、行情逼近生死線、**參數不變**。BTC 第三次測 6 萬、買單牆消耗、**收在 6 萬之下、逼近收破 59,567 週線生死線**（破則 support→resistance、下看 58K/57K/死寂；守則彈 POC 62.7K）。定點爆破軋空又來（9:30）、短持砸 4.9 萬顆但 6 萬以下有人接、5-6 萬合理買入區。`near_support` 門檻 ≤59,590 幾乎正好＝龐克 59,567 關鍵線（bot 在此線下禁地板空、對齊軋空警告），58K/57K 目標皆在 `BTC_SUPPORT_ZONE (58000,59000)` 內 → **未改常數、未重啟**（★監看 59,567 週線收破與否）
 - **6/26 下午（飛揚 BTC「第一幕」，Whisper）**：看跌延續、與歐陽 6/26 一致、**驗證今早下移在軌**。BTC 暴跌「第一幕」、58K 弱反彈沒回 3618（空頭興奮劑）、**6 萬 key resistance 上不去**、高空帶 60-60.5-61K、續跌。所有點位已落在現有 `BTC_SUPPORT_ZONE (58000,59000)`／反彈帶 60.5-62K（bot 58-59K 禁地板空、60-61K 放行高空，對齊飛揚操作）→ **參數不變、不重啟**。SOL 弱跌 64、AAVE 強 88、ZEC 空單小心反彈
 - **6/26 上午（歐陽 BTC 創熊市新低，Whisper）★參數變動★**：BTC 連 4 根日線陰線、**跌破 59-60K 二探、創本輪熊市新低 58,000、短期沒支撐**。歐陽：**別地板空**（58-59K 破位後短暫支撐、地板空易報復性軋空）、**別輕易抄底**（6 萬不是底、等完全破位）、反彈 **60.5-61K 高拋**、**62K 已是強壓力**。BTC 區間再下移：`BTC_SUPPORT_ZONE (59000,60000) → (58000,59000)`（near_support ≤59,590）、`BTC_RESISTANCE_ZONE (63000,64000) → (61000,62000)`、`main.py` KEY 同步。SOL M頂走完空單可平、AVAX 等 90 空、ETH 看三位數（跌破 1,000）。**已部署並重啟 coin-monitor**
