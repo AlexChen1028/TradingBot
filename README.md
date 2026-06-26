@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-25 22:15 +08
+> Last updated: 2026-06-26 13:41 +08
 
 ---
 
@@ -114,7 +114,7 @@ Gaps currently noted (see notes file):
 - EMA 50 (1h): direction must agree with EMA50 trend
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-25: 59K–60K，門檻 ≤60,600；59K 放量二探企穩、60K 关口別地板空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-26: 58K–59K，門檻 ≤59,590；跌破二探創熊市新低 58K、別地板空防報復性軋空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
 - ETH-only gate (`ETH_RESISTANCE_ZONE` 1,670–1,720 / `ETH_SUPPORT_ZONE` 1,600–1,640 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 突破失敗、跌回 1,604-1,692 區間→operative 壓制下移至 1,670-1,690（飛揚 6/24 連兩日精準承壓、今 1,692 拒絕）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、深支撐 (1,600–1,640)、**或突破多頭區 (1,640–1,670，未到高空帶不追空)**；shorts 放行 ≥1,670（接 1,670-1,690 反彈承壓）及破 <1,600 追空 (2026-06-24 飛揚)
 - SOL-only gate (`SOL_RESISTANCE_ZONE` 70–72 / `SOL_SUPPORT_ZONE` 66–68, 2026-06-25 飛揚): SOL 已跌至 64–72 區間，high-short 帶下移。SOL is short-biased — LONG skipped unless price ≤ ~68.7 (only buy the 66–68 bounce); SHORT skipped while inside the 66–68 take-profit/support floor (地板追空 R:R 差，飛揚最低打 64.6、跌破 66–68 追空). 70–72 is the preferred high-short entry (飛揚 6/25：SOL 不硬很軟、M 頂續空)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/26 上午（歐陽 BTC 創熊市新低，Whisper）★參數變動★**：BTC 連 4 根日線陰線、**跌破 59-60K 二探、創本輪熊市新低 58,000、短期沒支撐**。歐陽：**別地板空**（58-59K 破位後短暫支撐、地板空易報復性軋空）、**別輕易抄底**（6 萬不是底、等完全破位）、反彈 **60.5-61K 高拋**、**62K 已是強壓力**。BTC 區間再下移：`BTC_SUPPORT_ZONE (59000,60000) → (58000,59000)`（near_support ≤59,590）、`BTC_RESISTANCE_ZONE (63000,64000) → (61000,62000)`、`main.py` KEY 同步。SOL M頂走完空單可平、AVAX 等 90 空、ETH 看三位數（跌破 1,000）。**已部署並重啟 coin-monitor**
 - **6/25 晚間（加密龐克＋飛揚 ETH/SOL，字幕/Whisper）★SOL 微調★**：BTC 續區間震盪看空——龐克：第三次測 6 萬、跌穿時追空被大鯨魚買牆軋（嘎空）、區間 60-65K、熊底將近（長持 78%）；飛揚：61,900 黃昏星只能做空。**BTC/ETH 維持**（下午的 59-60K/63-64K 在軌）。**SOL 不硬很軟、stale 下移**：`SOL_SUPPORT_ZONE (68,72) → (66,68)`、`SOL_RESISTANCE_ZONE (74,76) → (70,72)`（SOL 跌至 64-72、高空 70-72、最低 64.6，讓 bot 能在實際區間做空、不把高空帶當地板擋掉）。ETH 高空 1,650-1,670/破 1,602 追空、支撐 1,592；AAVE 反彈沒結束別空、120 生死線。**已部署並重啟 coin-monitor**
 - **6/25 下午（飛揚＋歐陽 BTC 二探，Whisper）★參數變動★**：方向選擇兌現——BTC 放量**暴跌破 62K → 59K**、現反彈 ~61K（先前監看的「波動率信號＋61,097 破位」＝向下）。兩位共識 **59-60K=二探/最後支撐、千万别地板空、反彈帶 61.5-63K**（歐陽偏 60K 做多博反彈至 63K、飛揚偏 61-61.5K 高空續空）。BTC 區間整體下移：`BTC_SUPPORT_ZONE (61000,62000) → (59000,60000)`（near_support 連動 ≤60,600，護 60K 地板）、`BTC_RESISTANCE_ZONE (64000,65500) → (63000,64000)`、`main.py` KEY zones 同步。山寨別做多、做多首選 BTC。**已部署並重啟 coin-monitor**（監看 60K 守住反彈 63K vs 失守創新低）
 - **6/25 凌晨（飛揚 6/24 晚間 ETH，Whisper）★參數變動★**：修 stale 參數——ETH 6/22 衝 1,775 的突破已失敗、跌回 1,604-1,692 區間，operative 壓制下移至 1,670-1,690（飛揚連兩日精準承壓、今 1,692 拒絕）。舊 `(1780,1850)` 高空帶讓 bot 整個 ETH 實際區間都不做空 → `ETH_RESISTANCE_ZONE (1780,1850) → (1670,1720)`，突破多頭區禁空閘門連動收窄 1,640-1,670、**shorts 放行 ≥1,670（接 1,690 反彈承壓）及破 <1,600 追空**。BTC 暴跌至 61,300（逼近支撐、與區間一致不改）。**已部署並重啟 coin-monitor**
