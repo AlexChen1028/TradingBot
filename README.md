@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-26 13:41 +08
+> Last updated: 2026-06-26 14:10 +08
 
 ---
 
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/26 下午（飛揚 BTC「第一幕」，Whisper）**：看跌延續、與歐陽 6/26 一致、**驗證今早下移在軌**。BTC 暴跌「第一幕」、58K 弱反彈沒回 3618（空頭興奮劑）、**6 萬 key resistance 上不去**、高空帶 60-60.5-61K、續跌。所有點位已落在現有 `BTC_SUPPORT_ZONE (58000,59000)`／反彈帶 60.5-62K（bot 58-59K 禁地板空、60-61K 放行高空，對齊飛揚操作）→ **參數不變、不重啟**。SOL 弱跌 64、AAVE 強 88、ZEC 空單小心反彈
 - **6/26 上午（歐陽 BTC 創熊市新低，Whisper）★參數變動★**：BTC 連 4 根日線陰線、**跌破 59-60K 二探、創本輪熊市新低 58,000、短期沒支撐**。歐陽：**別地板空**（58-59K 破位後短暫支撐、地板空易報復性軋空）、**別輕易抄底**（6 萬不是底、等完全破位）、反彈 **60.5-61K 高拋**、**62K 已是強壓力**。BTC 區間再下移：`BTC_SUPPORT_ZONE (59000,60000) → (58000,59000)`（near_support ≤59,590）、`BTC_RESISTANCE_ZONE (63000,64000) → (61000,62000)`、`main.py` KEY 同步。SOL M頂走完空單可平、AVAX 等 90 空、ETH 看三位數（跌破 1,000）。**已部署並重啟 coin-monitor**
 - **6/25 晚間（加密龐克＋飛揚 ETH/SOL，字幕/Whisper）★SOL 微調★**：BTC 續區間震盪看空——龐克：第三次測 6 萬、跌穿時追空被大鯨魚買牆軋（嘎空）、區間 60-65K、熊底將近（長持 78%）；飛揚：61,900 黃昏星只能做空。**BTC/ETH 維持**（下午的 59-60K/63-64K 在軌）。**SOL 不硬很軟、stale 下移**：`SOL_SUPPORT_ZONE (68,72) → (66,68)`、`SOL_RESISTANCE_ZONE (74,76) → (70,72)`（SOL 跌至 64-72、高空 70-72、最低 64.6，讓 bot 能在實際區間做空、不把高空帶當地板擋掉）。ETH 高空 1,650-1,670/破 1,602 追空、支撐 1,592；AAVE 反彈沒結束別空、120 生死線。**已部署並重啟 coin-monitor**
 - **6/25 下午（飛揚＋歐陽 BTC 二探，Whisper）★參數變動★**：方向選擇兌現——BTC 放量**暴跌破 62K → 59K**、現反彈 ~61K（先前監看的「波動率信號＋61,097 破位」＝向下）。兩位共識 **59-60K=二探/最後支撐、千万别地板空、反彈帶 61.5-63K**（歐陽偏 60K 做多博反彈至 63K、飛揚偏 61-61.5K 高空續空）。BTC 區間整體下移：`BTC_SUPPORT_ZONE (61000,62000) → (59000,60000)`（near_support 連動 ≤60,600，護 60K 地板）、`BTC_RESISTANCE_ZONE (64000,65500) → (63000,64000)`、`main.py` KEY zones 同步。山寨別做多、做多首選 BTC。**已部署並重啟 coin-monitor**（監看 60K 守住反彈 63K vs 失守創新低）
