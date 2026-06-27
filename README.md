@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-06-26 23:08 +08
+> Last updated: 2026-06-27 22:55 +08
 
 ---
 
@@ -115,7 +115,7 @@ Gaps currently noted (see notes file):
 - `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
 - `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-06-26: 58K–59K，門檻 ≤59,590；跌破二探創熊市新低 58K、別地板空防報復性軋空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
-- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,580–1,600 / `ETH_SUPPORT_ZONE` 1,500–1,520 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 隨 BTC 續跌至 1,500-1,600「純減錢」→高空帶下移 1,580-1,600（飛揚 6/26：最好機會 1,600、MA5 缺口 1,603）、關鍵支撐 1,500-1,510（2618）。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、關鍵支撐 (1,500–1,520)、**或突破多頭區 (1,520–1,580，未到高空帶不追空)**；shorts 放行 ≥1,580（接 1,580-1,600 壓制）及破 <1,500 追空 (2026-06-26 飛揚)
+- ETH-only gate (`ETH_RESISTANCE_ZONE` 1,600–1,620 / `ETH_SUPPORT_ZONE` 1,500–1,520 / `ETH_LONG_ZONE` 1,370–1,390 / `ETH_NO_LONG_ABOVE` 1,700): ETH 雙底震盪 1,500-1,620→高空帶上移 1,600-1,620（飛揚 6/27：MA5 1600/M310 1620；突破上看 1,798 頸線）、關鍵支撐/雙底 1,500。ETH LONG allowed **only** within the 悲觀二探 zone (price ≤ ~1,404), blocked elsewhere; ETH SHORT skipped while price is inside 悲觀二探 (1,356–1,404)、關鍵支撐 (1,500–1,520)、**或突破多頭區 (1,520–1,600，未到高空帶不追空)**；shorts 放行 ≥1,600（接 1,600-1,620 壓制）及破 <1,500 追空 (2026-06-27 飛揚)
 - SOL-only gate (`SOL_RESISTANCE_ZONE` 70–72 / `SOL_SUPPORT_ZONE` 66–68, 2026-06-25 飛揚): SOL 已跌至 64–72 區間，high-short 帶下移。SOL is short-biased — LONG skipped unless price ≤ ~68.7 (only buy the 66–68 bounce); SHORT skipped while inside the 66–68 take-profit/support floor (地板追空 R:R 差，飛揚最低打 64.6、跌破 66–68 追空). 70–72 is the preferred high-short entry (飛揚 6/25：SOL 不硬很軟、M 頂續空)
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
 
@@ -422,6 +422,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 - **BTC 壓力維持** `(64000,65500)`（歐陽 64-65K 開空、飛揚 64K 高空；上方硬壓 66-67K 通道頂/布林上軌）；`BTC_HARD_STOP 69,150`、`ETH_NO_LONG_ABOVE 1,700`、`ETH_LONG_ZONE (1370,1390)`、`SHORT_BIAS`、`COIN_BLACKLIST` 維持。`main.py` KEY zones 同步
 - 山寨：SOL 73-74 開空（目標 69）、AVI 順勢追空、ADA/LTC 弱勢無機會（已在黑名單）
 - **晚間追加**（飛揚 6/21 ETH，Whisper）：重申 BTC 64.5-65.5K 高空 / ETH 1,704-1,706 承壓、破 1,700 小倉追空；**與上述參數一致，無新變動**（僅 append insight，未改常數、未重啟容器）
+- **6/27 晚間（飛揚 BTC/ETH ＋ 歐陽 BTC，Whisper）★ETH 微調★**：三方一致「**6 萬＝多空生死線、弱勢無量震盪**」。飛揚：BTC 58K 反彈逼近 6 萬「這不是上漲是陷阱」；歐陽：深破後不再猛跌、58K 低吸/60.5-61K 指引/61.5-62K 開空。**BTC 不改**（6 萬生死線＝near_support 邊界、58K 低吸/60.5-62K 高空在軌）。ETH 雙底震盪 1,500-1,620、高空帶同向上移 `ETH_RESISTANCE_ZONE (1580,1600) → (1600,1620)`（飛揚 MA5 1600/M310 1620；突破多頭區禁空連動 1,520-1,600、shorts 放行 ≥1,600）。SOL/AVAX 逼空預期、SOL 空單考慮平倉。**已部署並重啟 coin-monitor**
 - **6/26 深夜（飛揚 ETH 續跌，Whisper）★ETH 參數變動★**：ETH「純減錢」隨 BTC 跌至 1,500-1,600、stale 下移。`ETH_RESISTANCE_ZONE (1670,1720) → (1580,1600)`（飛揚：高空帶 1,580-1,600、最好 1,600、MA5 缺口 1,603）、`ETH_SUPPORT_ZONE (1600,1640) → (1500,1520)`（1,500-1,510＝2618 關鍵支撐、空單跑路；突破多頭區禁空連動 1,520-1,580、shorts 放行 ≥1,580 及破 <1,500 追空）。BTC 重申高空（58.3K 反彈做空、續高空、參數不變）。**已部署並重啟 coin-monitor**
 - **6/26 晚間（加密龐克 BTC 血崩，原生字幕）**：重申看跌、行情逼近生死線、**參數不變**。BTC 第三次測 6 萬、買單牆消耗、**收在 6 萬之下、逼近收破 59,567 週線生死線**（破則 support→resistance、下看 58K/57K/死寂；守則彈 POC 62.7K）。定點爆破軋空又來（9:30）、短持砸 4.9 萬顆但 6 萬以下有人接、5-6 萬合理買入區。`near_support` 門檻 ≤59,590 幾乎正好＝龐克 59,567 關鍵線（bot 在此線下禁地板空、對齊軋空警告），58K/57K 目標皆在 `BTC_SUPPORT_ZONE (58000,59000)` 內 → **未改常數、未重啟**（★監看 59,567 週線收破與否）
 - **6/26 下午（飛揚 BTC「第一幕」，Whisper）**：看跌延續、與歐陽 6/26 一致、**驗證今早下移在軌**。BTC 暴跌「第一幕」、58K 弱反彈沒回 3618（空頭興奮劑）、**6 萬 key resistance 上不去**、高空帶 60-60.5-61K、續跌。所有點位已落在現有 `BTC_SUPPORT_ZONE (58000,59000)`／反彈帶 60.5-62K（bot 58-59K 禁地板空、60-61K 放行高空，對齊飛揚操作）→ **參數不變、不重啟**。SOL 弱跌 64、AAVE 強 88、ZEC 空單小心反彈
