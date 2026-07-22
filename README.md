@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-07-22 22:29 +08
+> Last updated: 2026-07-22 23:29 +08
 
 ---
 
@@ -112,9 +112,9 @@ Gaps currently noted (see notes file):
 **Entry filters (every scan):**
 - RSI 14: skip long if RSI ≥ 80 (overbought); skip short if RSI ≤ 20 (oversold)
 - EMA 50 (1h): direction must agree with EMA50 trend
-- `SHORT_BIAS=True`: altcoins — LONG completely blocked; major coins — LONG needs +1 extra signal (2026-06-03 KOL: 完全放棄山寨幣做多幻想)
+- `SHORT_BIAS=False`（2026-07-22 更新，此前自 2026-05-25 起長期 True）: **龐克明確稱「昨日突破了 65,500 這一線平行高點」（首次用「突破」非「摸到」），現貨查證連續 4h 收盤站穩、回踩 65,505 守住支撐＝SHORT_BIAS 鬆動門檻（龐克創 65,500 新高）正式觸發**；altcoins LONG 完全解禁、major coins LONG 不再需要額外 +1 訊號
 - **Short-Squeeze Filter** (`squeeze_no_short`, 2026-06-16 龐克): when BTC funding ≤ `SQUEEZE_FR_EXTREME` (−0.03%) **and** OI at a 14-day high (OI degrades to funding-only if unavailable), **all** new SHORT entries are paused market-wide (主力惡意軋空起手式，避免空在地板被清算)
-- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-07-21: 64K–65.5K，門檻 ≤66,155；BTC 明確突破並站穩 65,500 後接多帶跟隨上移、飛揚 64,500-65,000 低多/歐陽中軌 64,000-65,000 接多，防 BTC 回踩接多帶反彈帶動山寨補漲軋空), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)
+- `near_support` gate: when BTC ≤ `BTC_SUPPORT_ZONE[1]`×1.01 (2026-07-22: 64K–65.5K，門檻 ≤66,155；65,500 由壓力翻轉為龐克確認的支撐位、飛揚 65,500-66,000 低多精準命中，維持不變), altcoin SHORT entries are skipped (追空禁令；跌破才有暴跌空間)。Cosmetic `BTC_RESISTANCE_ZONE` 上修至 68,000–71,000（龐克：短期持有者成本線／200 日均線，本輪熊市最後最關鍵位）
 - ETH-only gate (`ETH_RESISTANCE_ZONE` 1,840–1,860 / `ETH_SUPPORT_ZONE` 1,800–1,820 / `ETH_LONG_ZONE` 1,800–1,820 / `ETH_NO_LONG_ABOVE` 1,860): 1,946 見頂回落**跌破 1,850 生死線**（龐克預告兌現）→支撐/壓力翻轉：高空帶 1,840-1,860（飛揚承壓可高空、龐克 1,850 收破反抽不過＝空單盈虧比好）、強支撐帶 1,800-1,820（飛揚「1,800＝要命的分水嶺、跌破才追空」、跌破後飛揚看 1,750/龐克看 1,592-1,500）。ETH LONG allowed **only** within 強支撐帶 (price ≤ ~1,838，不追漲), still requires SHORT_BIAS major +1 signal; ETH SHORT skipped while price is inside 1,782–1,840（強支撐帶±1%＋緩衝＝防插針掃損）；shorts 放行 ≥1,840（高空帶）及深破 <1,782 追空 (2026-07-18 飛揚×2＋龐克)
 - SOL-only gate (`SOL_RESISTANCE_ZONE` 100–120 / `SOL_SUPPORT_ZONE` 60–75, 2026-07-02 飛揚): SOL 月線 TD9 反轉、自 60 反彈至 80（日線分水嶺），支撐下移周線 886/2618 = 60–75、守 60；生死線/高空區上移 100–120。SOL is short-biased — LONG skipped unless price ≤ ~75.75 (逢低接多至 75、80 以上勿追涨); SHORT skipped while inside the 60–75 support floor (地板追空 R:R 差、守 60). 100–120 是真正分水嶺高空區（飛揚 7/2：不值得空 SOL、等 120 再空）— 記於 cosmetic `SOL_RESISTANCE_ZONE`（未接線）
 - `COIN_BLACKLIST`: CHZ, ORDI, WLD, LAB, ADA, HYPE, BCH, BEAT, LTC — LONG blocked entirely
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **7/22 晚間（加密龐克＋飛揚 ETH，字幕）★★SHORT_BIAS: True → False；cosmetic BTC_RESISTANCE_ZONE 上修 68,000-71,000；重啟★★**：**龐克連續四輪（7/16／7/20／7/21／7/22）追蹤後，本輪首次明確稱「昨日突破了 65,500 這一線平行高點」（非「摸到」）**——SHORT_BIAS 鬆動門檻（龐克創 65,500 新高）正式滿足。現貨查證吻合：連續 4h 收盤站穩、高探 66,924、回踩 65,505 精準守住支撐（非插針假突破）。→ `SHORT_BIAS = True → False`（解除山寨 LONG 完全停止 + 主流幣 LONG 額外 +1 訊號要求）；cosmetic **`BTC_RESISTANCE_ZONE (66,000,67,000) → (68,000,71,000)`**（龐克：68,000＝STH 平均成本線、71,000＝200 日均線，定性為「本輪熊市最後最關鍵位置」，能否帶量上穿繫於 CLARITY Act 8/7 前立法進度）；`BTC_SUPPORT_ZONE (64,000,65,500)` 不變（65,500 由壓力翻轉為確認支撐）、`near_support` 門檻 ≤66,155 不變。飛揚本輪僅 ETH 戰術更新（1,900-1,902 支撐再驗證），未提供結構性表態。**已 `ast.parse` 驗證通過、commit＋部署＋重啟＋TG**（★★下一輪最高優先監看：SHORT_BIAS 解禁後實盤 LONG 訊號觸發狀況；68,000-71,000 觸及反應（龐克：若未帶量上破恐為終極震倉，之後看 5-6 萬大底）；CLARITY Act 8/7 前立法進度；龐克提及「68,000 以上重新跌回＝本輪熊市最後一次波段空單機會（CP 值已不如前）」，屆時需評估是否恢復部分 SHORT 邏輯★★）
 - **7/22（飛揚 BTC＋歐陽，Whisper/字幕）★純重申、參數不變、未重啟★**：飛揚**連續第三輪以幾乎相同措辭明確否定結構翻多**——「現在只是一個反彈，大方向仍在下跌，並沒有做出很明顯的反轉的迹象」；今日續低多支撐 65,500-66,000（涵蓋現行帶內）。歐陽確認 **BTC 有效突破站穩 66,000-66,500**（與 cosmetic `BTC_RESISTANCE_ZONE (66,000-67,000)` 精準對齊）、定調「逼空行情」預期先回彩 65,000-65,500 續多再插針清算空頭，但**收尾框架仍是「魚尾行情→階段性頂部」**——延續其一貫偏空終局定調，非新的看多結構論述。→ **不改任何常數**：兩支影片皆未觸發 SHORT_BIAS 鬆動門檻（飛揚結構翻多本人再度否定；龐克本輪無新片）。**git 同步未重啟、發 TG**（★監看：67,000 籌碼密集區觸及反應；68,000-69,138 STH 成本線（龐克待表態）；飛揚是否終有一輪改口承認反轉★）
 - **首次納入飛揚/歐陽 Whisper 逐字稿**（6 支，6/19~6/21）→ 兩位 KOL 一致強烈看空、反彈無量、高點下移
 - **ETH 1,700 突破失效**：`ETH_RESISTANCE_ZONE (1800,1820) → (1700,1740)`（飛揚 1,704-1,706 / 歐陽 1,715-1,748 高空帶）；`ETH_SUPPORT_ZONE (1700,1720) → (1600,1640)`（1,700 由支撐轉回壓力，新支撐＝1,618 景象位/1,608 追空線）→ **解除 1,700 附近禁空**，讓 ETH 在現價 ~1,715 可逢高做空
