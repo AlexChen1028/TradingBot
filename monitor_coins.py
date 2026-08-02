@@ -454,12 +454,26 @@ def send_performance_report():
 
 
 # ── 幣種清單更新 ──────────────────────────────────────────────────────────────
-def get_top_coins(exchange):
+def get_top_coins(exchange, exchange_priv=None):
     print("正在更新幣種清單...")
     markets = exchange.load_markets()
     symbols = [s for s, m in markets.items()
                if m.get('quote') == 'USDT' and m.get('type') in ('swap', 'future')
                and m.get('active') and ':USDT' in s]
+
+    # demo 交易所可交易幣種是主網的子集，先交集過濾，避免選到 demo 開不了倉的幣
+    # （例如 TLM：主網有行情、demo 無此市場，每輪都會開倉失敗）
+    if exchange_priv is not None:
+        try:
+            priv_markets = exchange_priv.load_markets()
+            priv_symbols = {s for s, m in priv_markets.items() if m.get('active')}
+            before = len(symbols)
+            symbols = [s for s in symbols if s in priv_symbols]
+            skipped = before - len(symbols)
+            if skipped:
+                print(f"  ⚠️ {skipped} 個幣種 demo 交易所不支援，已排除")
+        except Exception as e:
+            print(f"  ⚠️ demo 市場清單過濾失敗，略過過濾：{e}")
 
     since = int((datetime.now(timezone.utc) - timedelta(days=185)).timestamp() * 1000)
     results = []
@@ -830,7 +844,10 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
                 pass  # 槓桿已正確，繼續
             else:
                 raise
-        ref_price = float(exchange.fetch_ticker(symbol)['last'])
+        last_price = exchange.fetch_ticker(symbol)['last']
+        if last_price is None:
+            raise ValueError(f"{symbol} ticker 無有效價格（last=None），跳過本次開倉")
+        ref_price = float(last_price)
         margin    = MARGIN_BY_SIGNALS.get(n_signals, MARGIN_USDT)
         amount    = round(margin * lev / ref_price, 4)
         sl_side   = 'sell' if direction == 1 else 'buy'
@@ -1547,7 +1564,7 @@ def main():
     # 啟動對帳：接管交易所有倉但本地無記錄的孤兒倉（防 -1007 逾時等遺漏）
     print("  ▶ 啟動對帳：檢查交易所是否有未追蹤倉位…")
     _reconcile_orphans(exchange_priv, positions)
-    watch_coins      = get_top_coins(exchange_pub)
+    watch_coins      = get_top_coins(exchange_pub, exchange_priv)
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次
     last_report_date = None  # 每天發一次週績效報告
@@ -1557,7 +1574,7 @@ def main():
     while True:
         try:
             if time.time() - last_update >= UPDATE_INTERVAL:
-                new_list = get_top_coins(exchange_pub)
+                new_list = get_top_coins(exchange_pub, exchange_priv)
                 if new_list:
                     watch_coins = new_list
                     last_update = time.time()
