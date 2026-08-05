@@ -857,28 +857,57 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         sl_id = tp_id = None
         coin = symbol.split('/')[0]
 
+        sltp_4130 = False
+
         # 固定止損（STOP_MARKET）— closePosition=True，平倉時 Binance 自動撤銷對側 TP
+        sl_price = round(
+            price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
+        )
         try:
-            sl_price = round(
-                price * (1 - sl_pct) if direction == 1 else price * (1 + sl_pct), 8
-            )
             sl_order = _place_sltp(exchange, symbol, 'stop_market', sl_side, sl_price, direction)
             sl_id = sl_order['id']
             print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛")
         except Exception as e:
-            print(f"  ❌ 止損訂單失敗 {symbol}: {e}")
-            tg(f"⚠️ <b>止損掛單失敗</b> {coin}\n{e}\n倉位已開但<b>無交易所止損保護</b>！")
+            if '-4509' in str(e):
+                # 倉位剛成交、交易所尚未同步完成（TIF GTE 要求已有倉位）→ 短暫等待後重試一次
+                time.sleep(2)
+                try:
+                    sl_order = _place_sltp(exchange, symbol, 'stop_market', sl_side, sl_price, direction)
+                    sl_id = sl_order['id']
+                    print(f"  ✅ 固定止損 {sl_pct*100:.1f}% @ {sl_price:.6g} 已掛（重試成功）")
+                except Exception as e2:
+                    print(f"  ❌ 止損訂單失敗 {symbol}: {e2}")
+                    tg(f"⚠️ <b>止損掛單失敗</b> {coin}\n{e2}\n倉位已開但<b>無交易所止損保護</b>！")
+            elif '-4130' in str(e):
+                # 交易所已有同向殘留 closePosition 單（demo 撤不掉/撈不到）→ 直接改軟體止損兜底，不重試
+                sltp_4130 = True
+                print(f"  🔒 {coin} 開倉當下偵測到同向殘留 closePosition 單（-4130）→ 改每 15min 軟體止損兜底")
+                tg(f"🔒 <b>{coin} 止損改軟體兜底</b>\n開倉時交易所已存在同向 closePosition 單（-4130），由軟體止損每 15min 保護")
+            else:
+                print(f"  ❌ 止損訂單失敗 {symbol}: {e}")
+                tg(f"⚠️ <b>止損掛單失敗</b> {coin}\n{e}\n倉位已開但<b>無交易所止損保護</b>！")
 
         # 固定止盈天花板（TAKE_PROFIT_MARKET）— closePosition=True，平倉時 Binance 自動撤銷對側 SL
+        tp_price = round(
+            price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
+        )
         try:
-            tp_price = round(
-                price * (1 + tp_pct) if direction == 1 else price * (1 - tp_pct), 4
-            )
             tp_order = _place_sltp(exchange, symbol, 'take_profit_market', sl_side, tp_price, direction)
             tp_id = tp_order['id']
         except Exception as e:
-            print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
-            tg(f"⚠️ <b>止盈掛單失敗</b> {coin}\n{e}\n軟體備援止盈仍有效")
+            if '-4509' in str(e):
+                time.sleep(2)
+                try:
+                    tp_order = _place_sltp(exchange, symbol, 'take_profit_market', sl_side, tp_price, direction)
+                    tp_id = tp_order['id']
+                except Exception as e2:
+                    print(f"  ⚠️ TP 訂單失敗 {symbol}: {e2}")
+                    tg(f"⚠️ <b>止盈掛單失敗</b> {coin}\n{e2}\n軟體備援止盈仍有效")
+            elif '-4130' in str(e):
+                sltp_4130 = True
+            else:
+                print(f"  ⚠️ TP 訂單失敗 {symbol}: {e}")
+                tg(f"⚠️ <b>止盈掛單失敗</b> {coin}\n{e}\n軟體備援止盈仍有效")
 
         now_ts = time.time()
         positions[symbol] = {
@@ -892,6 +921,7 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
             'tp_order_id': tp_id,
             'sl_placed_at': now_ts if sl_id else 0,
             'tp_placed_at': now_ts if tp_id else 0,
+            'sltp_4130_noted': sltp_4130,
         }
         save_positions(positions)
         side = 'LONG' if direction == 1 else 'SHORT'
