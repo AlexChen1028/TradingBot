@@ -1614,7 +1614,7 @@ def main():
     watch_coins      = get_top_coins(exchange_pub, exchange_priv)
     last_update      = time.time()
     last_leaderboard = 0  # 立刻發第一次
-    last_report_date = None  # 每天發一次週績效報告
+    last_report_date = now8().date()  # 每天發一次週績效報告（初始化為今日，避免每次重啟都誤發一次）
     last_report_hour = -1   # 整點持倉公告
     market_bias      = 0    # 初始中性，啟動時立刻抓一次
 
@@ -1630,6 +1630,14 @@ def main():
             if time.time() - last_leaderboard >= LEADERBOARD_INTERVAL:
                 market_bias, _ = get_market_bias(exchange_pub)  # 每小時更新大環境
                 lb_candidates  = send_leaderboard(exchange_pub)
+                # demo 交易所可交易幣種是主網子集，過濾避免選到 demo 開不了倉的幣（同 get_top_coins 邏輯，例如 ALLO：主網有行情、demo 無此市場，每次都 -1121 開倉失敗）
+                if lb_candidates and exchange_priv.markets:
+                    priv_symbols = set(exchange_priv.markets)
+                    before = len(lb_candidates)
+                    lb_candidates = [c for c in lb_candidates if c[0] in priv_symbols]
+                    skipped = before - len(lb_candidates)
+                    if skipped:
+                        print(f"  ⚠️ 漲跌幅榜候選 {skipped} 個幣種 demo 交易所不支援，已排除")
                 last_leaderboard = time.time()
                 if lb_candidates:
                     scan_leaderboard(exchange_pub, exchange_priv, lb_candidates, positions, market_bias)
