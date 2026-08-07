@@ -842,6 +842,23 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         except Exception as e:
             if 'leverage not modified' in str(e).lower() or '-4046' in str(e):
                 pass  # 槓桿已正確，繼續
+            elif '-4028' in str(e):
+                # 該幣種在 demo 上允許的最大槓桿低於預設值 → 逐步降低重試，避免每次訊號都直接放棄
+                orig_lev = lev
+                for fallback_lev in [x for x in (10, 5, 3, 2, 1) if x < orig_lev]:
+                    try:
+                        exchange.set_leverage(fallback_lev, symbol, params={'marginMode': 'isolated'})
+                        lev = fallback_lev
+                        break
+                    except Exception as e2:
+                        if 'leverage not modified' in str(e2).lower() or '-4046' in str(e2):
+                            lev = fallback_lev
+                            break
+                        if '-4028' not in str(e2):
+                            raise
+                else:
+                    raise
+                print(f"  ⚙️ {symbol} 槓桿 {orig_lev}x 不支援（-4028），改用 {lev}x")
             else:
                 raise
         last_price = exchange.fetch_ticker(symbol)['last']
