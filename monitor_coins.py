@@ -1631,8 +1631,9 @@ def main():
                 market_bias, _ = get_market_bias(exchange_pub)  # 每小時更新大環境
                 lb_candidates  = send_leaderboard(exchange_pub)
                 # demo 交易所可交易幣種是主網子集，過濾避免選到 demo 開不了倉的幣（同 get_top_coins 邏輯，例如 ALLO：主網有行情、demo 無此市場，每次都 -1121 開倉失敗）
+                # 注意：market 存在於 exchange_priv.markets 不代表可交易，需檢查 active（例如 MMT/USDT:USDT 存在但 active=False，僅存在性過濾仍會 -1121 開倉失敗）
                 if lb_candidates and exchange_priv.markets:
-                    priv_symbols = set(exchange_priv.markets)
+                    priv_symbols = {s for s, m in exchange_priv.markets.items() if m.get('active')}
                     before = len(lb_candidates)
                     lb_candidates = [c for c in lb_candidates if c[0] in priv_symbols]
                     skipped = before - len(lb_candidates)
