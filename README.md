@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-13 01:11 +08
+> Last updated: 2026-08-13 12:24 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/13（飛揚，歐陽本輪轉錄失敗待重試）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：ETH 昨晚 1895/1855 跌破提醒精準兌現，下探至 1875、逼近 1800 附近(原文數字轉錄不清)。BTC 64,200-64,400 壓制封面預告兌現，反彈至 64,400 後轉跌，凌晨最低 **63,300**(落於現行 `BTC_SUPPORT_ZONE`)，今日建議「跌破追空」、等 **63,000**(382 費波位)再進場空單。→ **不改任何常數**：BTC 最低點/觀察位完全落在現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 內；ETH 低點因轉錄雜訊且僅單一 KOL 表態，不構成常數調整門檻；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:歐陽本輪轉錄失敗影片下輪重試結果;ETH 低點精確數字確認(是否逼近或跌破 `ETH_SUPPORT_ZONE` 下緣 1,810);BTC 63,000 跌破後續發展或反彈測試 63,600-64,500 壓制★）
 - **8/12（龐克＋飛揚×2＋歐陽）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 觸及 65,500 受阻後回落 64,000 之下,飛揚/歐陽分別觀察到 BTC 插針低點 **63,200**/**63,800** 企穩反彈,皆落於現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 內;飛揚視 ETH 1900-1902 為高空機會(若破位看向 1895/M5 以下),歐陽 ETH 空單於 **1,850** 附近觸及支撐,皆落於 `ETH_SUPPORT_ZONE (1,810-1,850)` 內;歐陽重申 8 月大機率維持 62,500-65,000 箱體震盪。龐克新增川普旗下公司退出加密業務作為投降信號佐證熊末論,並推測與 9 月中清晰法案政治妥協有關;重申 5 萬-6 萬熊市大底推演,本人明確表態仍為條件式未確認。→ **不改任何常數**：四支影片的支撐/壓制測試位皆完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE` 延伸範圍內,屬箱體框架持續驗證;未宣告趨勢反轉,SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:BTC 能否守住支撐帶並重返 64,000-64,400 之上;ETH 在 1900-1902 成壓情況;歐陽 62,500-63,000 接多規劃是否觸發;死寂區推演後續發展★）
 - **8/12 bug fix（漲跌幅榜 demo 過濾未檢查 active 狀態）**：依每日盈虧報告健檢流程巡查過去 24h VPS log，發現 `MMT/USDT:USDT` 觸發強訊號（+10.7%，2 信號）開倉時以 `-1121 Invalid symbol` 失敗。追查根因：8/8 的漲跌幅榜過濾修復（僅檢查 `symbol in exchange_priv.markets`）不足以排除所有 demo 不可交易的幣種——`MMT/USDT:USDT` 這類 market **存在**於 `exchange_priv.markets` 但 `active=False`（已下市/不可交易），與 `get_top_coins()` 原本就會額外檢查 `m.get('active')` 的邏輯不一致，導致漲跌幅榜候選仍會選到看似存在、實際上不可交易的幣種。修法：漲跌幅榜過濾比照 `get_top_coins()`，改為檢查 `m.get('active')` 而非僅存在性。已 `ast.parse` 驗證通過。
 - **8/11（第三輪，飛揚）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 早盤 64,500-64,700 拒絕預警兌現，回落收 64,000。ETH 隔夜深跌一度逼近 1,850(較預期更深)，今日強勁反彈站上 113 分位衝擊 1900-1902，判斷追漲已來不及、傾向 1900-1902 視為高空機會，成壓則看向 1,808 首個支撐。→ **不改任何常數**：BTC/ETH 測試區間皆完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE (1,810-1,850)` 延伸範圍內；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:ETH 在 1900-1902 是否成壓回落至 1,808;ETH 能否突破 1900-1902 挑戰 `ETH_RESISTANCE_ZONE`;BTC 能否重新測試 64,500-64,700 壓制★）
