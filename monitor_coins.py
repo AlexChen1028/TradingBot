@@ -1496,6 +1496,10 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
     now = now8().strftime('%Y-%m-%d %H:%M +08')
     print(f"\n[{now}] 掃描 {len(watch_coins)} 個幣種  倉位 {len(positions)}/{MAX_POSITIONS}")
 
+    # 每輪對帳：接管交易所有倉但本地無記錄的孤兒倉（防開倉中途 -1007 逾時遺漏，
+    # 原本只在容器啟動時執行一次，若逾時發生在啟動之後該倉位會永遠卡在無 SL/TP 保護狀態）
+    _reconcile_orphans(exchange_priv, positions)
+
     if positions:
         check_positions(exchange_priv, positions)
 

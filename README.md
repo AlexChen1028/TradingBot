@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-15 23:46 +08
+> Last updated: 2026-08-16 00:50 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/16 bug fix（`_reconcile_orphans` 僅容器啟動時執行一次，中途 -1007 逾時孤兒倉永遠無 SL/TP 保護）**：使用者回報有 3 個倉位但只有 4 張 SL/TP 掛單（應為 6 張）。查證交易所實際持倉為 BTC LONG(0.0202)/SOL SHORT/WAL LONG 共 3 筆，但 `positions_altcoin.json` 只追蹤 SOL、WAL；BTC 完全未被本地記錄，且交易所上此刻**零**張 STOP_MARKET/TAKE_PROFIT_MARKET 掛單——BTC 倉位處於完全無保護狀態。追查 log 發現該 BTC 倉位源自開倉時 `-1007 Timeout waiting for response from backend server` 逾時（訂單其實已成交，但當下 `open_pos()` 判定失敗並放棄），而 `_reconcile_orphans()`（接管未追蹤孤兒倉、補掛 SL/TP 的機制）只在 `main()` 迴圈啟動前呼叫一次（monitor_coins.py:1613），容器已連續運行 3 天未重啟，此 -1007 逾時發生在啟動之後，孤兒倉因此從未被撿回。修法：將 `_reconcile_orphans(exchange_priv, positions)` 移入 `scan()` 每輪掃描開頭執行（monitor_coins.py:1499），讓孤兒倉偵測從「僅開機一次」變成「每 15 分鐘持續巡邏」。已 `ast.parse` 驗證通過；重啟後 `_reconcile_orphans` 會立即接管现有的 BTC 孤兒倉並補掛 SL/TP。
 - **8/15（飛揚＋歐陽）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：兩人皆確認 BTC 於現行支撐帶內反覆插針測試(飛揚 618 位 **62,008**/歐陽 **62,000-62,500**)，中軌連續兩次站穩失敗，判斷為箱體震盪非有效下跌趨勢。飛揚明確表態「牛旗結構尚不能確認」，反彈頂多看 63,200-63,500、65,300 想都不敢想，仍以高空思路對待。歐陽重申 62,000-63,000 接多/63,500 指引離場框架完整兌現。→ **不改任何常數**：兩位 KOL 的 BTC 測試位皆完全落在現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 內；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚 8/14 影片第三次轉錄失敗持續留待重試;BTC 能否守住 62,000-62,500，或延續跌破 62,008;反彈能否突破 63,200-63,500★）
 - **8/15 健檢修復（4 個幣種 isolated wallet 卡負值阻擋開倉）**：依每日盈虧報告健檢流程巡查過去 24h VPS log，發現 `NIL/USDT:USDT` 連續 2 次強訊號(+21.9%/+19.1%，皆 2 信號)開倉時以 `-2019 Margin is insufficient` 失敗，帳戶整體 USDT 餘額充足(free 2,748 U)排除資金不足可能。查詢 `positionRisk` 確認 NIL 的逐倉 `isolatedWallet` 卡在 **-1.57 USDT**（無持倉），與先前 ETH 曾發生過的已知模式一致（見 project memory：isolated wallet 卡負值會導致該幣種每次開倉都 `-2019`）。進一步全帳戶掃描發現另有 3 個幣種同樣卡負值且無持倉：`DEXE(-0.73)`、`HYPER(-38.64)`、`VIC(-18.86)`，皆為潛伏中、下次觸發訊號時會重演同樣失敗的既有問題。透過 `positionMargin type=1`（追加保證金）將 4 個幣種的 isolated wallet 歸零，屬帳戶狀態修復非程式碼變更，故不涉及 `ast.parse`/重啟。
 - **8/14（第三輪，龐克，飛揚本輪轉錄失敗待重試）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 上周 65,500 受阻後持續縮小版機械式震盪，昨日收十字線未站回 64,000 之上，提醒週末 **61,097** 假跌破需留意反彈(與 8/3 已報告區間延續，非新提出)。重申死寂抄底區與 5 萬-6 萬推演，均為條件式未確認；冷錢包物流商外洩逾 1 萬用戶資料背景事件。本輪主題 ETH 長線布局：重申熊轉牛中期才會將 BTC 換入 ETH，現階段不急於單獨抄底 ETH。→ **不改任何常數**：61,097 監看位/5 萬-6 萬推演皆非新事件且現價遠未觸及；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚轉錄失敗影片下輪重試結果;BTC 是否觸及 61,097 假跌破反彈，或延續 62,500-64,500 區間震盪;BTC 能否重返 64,000 之上★）
