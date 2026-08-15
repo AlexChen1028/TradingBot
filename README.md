@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-16 00:57 +08
+> Last updated: 2026-08-16 02:04 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/14（補記，第四輪，飛揚，Whisper 第六輪重試成功）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：8/14 晚間影片延遲多輪後才轉錄成功，內容為 63,400-63,600 進場 BTC 空單(至 618 位 62,800/62,200 出局)與 ETH 1900 壓制空單的詳細回顧，皆為 8/15 已報告過同一波交易之前情補記，無新資訊。→ **不改任何常數**：所有價位完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE`-`ETH_RESISTANCE_ZONE` 框架內。**git 同步未重啟、發 TG(簡短)**（延續 8/15 第二輪監看重點，本輪無新增）
 - **8/15（第二輪，飛揚，8/14影片第四次轉錄仍失敗）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：週末無行情，會員頻道 BTC 空單於 **62,800**/**63,200**(618/113 費波位)區間操作皆兌現浮盈，與同日第一輪報告觀察一致。ETH 持續圍繞 1845-1950 寬幅震盪已至極限，判斷沒有做多價值，今晚壓制看 1885-1895 僅 10 點空間，月線反彈需求後仍傾向續跌(此前已多輪提及)。→ **不改任何常數**：BTC 操作區間與 ETH 震盪觀察皆完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE-ETH_RESISTANCE_ZONE` 之間；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚 8/14 影片轉錄失敗持續留待重試;ETH 能否守住 1885-1895 或突破 1900 上方;BTC 空單週末是否出場★）
 - **8/16 bug fix（`_reconcile_orphans` 僅容器啟動時執行一次，中途 -1007 逾時孤兒倉永遠無 SL/TP 保護）**：使用者回報有 3 個倉位但只有 4 張 SL/TP 掛單（應為 6 張）。查證交易所實際持倉為 BTC LONG(0.0202)/SOL SHORT/WAL LONG 共 3 筆，但 `positions_altcoin.json` 只追蹤 SOL、WAL；BTC 完全未被本地記錄，且交易所上此刻**零**張 STOP_MARKET/TAKE_PROFIT_MARKET 掛單——BTC 倉位處於完全無保護狀態。追查 log 發現該 BTC 倉位源自開倉時 `-1007 Timeout waiting for response from backend server` 逾時（訂單其實已成交，但當下 `open_pos()` 判定失敗並放棄），而 `_reconcile_orphans()`（接管未追蹤孤兒倉、補掛 SL/TP 的機制）只在 `main()` 迴圈啟動前呼叫一次（monitor_coins.py:1613），容器已連續運行 3 天未重啟，此 -1007 逾時發生在啟動之後，孤兒倉因此從未被撿回。修法：將 `_reconcile_orphans(exchange_priv, positions)` 移入 `scan()` 每輪掃描開頭執行（monitor_coins.py:1499），讓孤兒倉偵測從「僅開機一次」變成「每 15 分鐘持續巡邏」。已 `ast.parse` 驗證通過；重啟後 `_reconcile_orphans` 會立即接管现有的 BTC 孤兒倉並補掛 SL/TP。
 - **8/15（飛揚＋歐陽）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：兩人皆確認 BTC 於現行支撐帶內反覆插針測試(飛揚 618 位 **62,008**/歐陽 **62,000-62,500**)，中軌連續兩次站穩失敗，判斷為箱體震盪非有效下跌趨勢。飛揚明確表態「牛旗結構尚不能確認」，反彈頂多看 63,200-63,500、65,300 想都不敢想，仍以高空思路對待。歐陽重申 62,000-63,000 接多/63,500 指引離場框架完整兌現。→ **不改任何常數**：兩位 KOL 的 BTC 測試位皆完全落在現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 內；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚 8/14 影片第三次轉錄失敗持續留待重試;BTC 能否守住 62,000-62,500，或延續跌破 62,008;反彈能否突破 63,200-63,500★）
