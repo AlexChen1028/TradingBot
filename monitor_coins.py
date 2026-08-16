@@ -30,12 +30,14 @@ LIMIT_ORDER_TIMEOUT = 15      # 限價掛單等待秒數，超過改市價
 LIMIT_SLIPPAGE      = 0.0002  # 限價優化幅度（做多掛低 / 做空掛高 0.02%）
 LEVERAGE       = 20     # 槓桿倍數（山寨幣）
 STOP_LOSS_PCT   = 0.035  # 固定止損 3.5%（山寨幣）
-TP_PCT          = 0.07   # 固定止盈 7%（山寨幣）
+TP_PCT          = 0.15   # 固定止盈天花板 15%（山寨幣；2026-08-16 從 7% 拉高，讓移動停利有空間讓大波動單子多跑）
+ALT_TRAIL_ACTIVATE_PCT = 0.04   # 山寨幣移動停利啟動門檻：獲利達 4% 後開始追蹤最高點（2026-08-16 新增）
+ALT_TRAIL_BACK_PCT     = 0.025  # 啟動後從最高點回落 2.5% 即出場鎖利（2026-08-16 新增）
 # 主流幣（BTC/ETH/SOL）專用參數
 MAJOR_LEVERAGE  = 50     # 槓桿倍數
 MAJOR_SL_PCT    = 0.01   # 固定止損 1%
 MAJOR_TP_PCT    = 0.02   # 固定止盈 2%
-TRAILING_PCT    = 0.15   # 軟體追蹤止盈備援（從最佳價格回落 15%）
+TRAILING_PCT    = 0.15   # 軟體追蹤止盈備援（從最佳價格回落 15%；固定TP更緊，實務上極少觸發，僅作極端行情備援）
 MAX_HOLD_HOURS = 36     # 最長持倉時間（原48，縮短避免套牢）
 TOP_N          = 20
 MIN_VOL_USDT   = 1_000_000
@@ -1291,8 +1293,17 @@ def check_positions(exchange, positions):
             trail   = (price < peak * (1 - TRAILING_PCT)) if d == 1 else (price > peak * (1 + TRAILING_PCT))
             timeout = held_h >= MAX_HOLD_HOURS
 
-            if sl or be_hit or tp_sw or trail or timeout:
-                reason = '止損' if sl else ('保本止損' if be_hit else ('軟體止盈' if tp_sw else ('追蹤止盈備援' if trail else '超時平倉')))
+            # 山寨幣移動停利：獲利達 ALT_TRAIL_ACTIVATE_PCT 後開始追蹤最高點，
+            # 回落 ALT_TRAIL_BACK_PCT 即出場鎖利，讓大波動單子在固定 TP 天花板(15%)之前
+            # 就能依動能持續鎖利，不必等到完整回吐才靠 SL/保本止損出場
+            alt_trail = False
+            if not _is_major:
+                peak_gain = (peak - ep) / ep * d
+                if peak_gain >= ALT_TRAIL_ACTIVATE_PCT:
+                    alt_trail = (price < peak * (1 - ALT_TRAIL_BACK_PCT)) if d == 1 else (price > peak * (1 + ALT_TRAIL_BACK_PCT))
+
+            if sl or be_hit or tp_sw or alt_trail or trail or timeout:
+                reason = '止損' if sl else ('保本止損' if be_hit else ('軟體止盈' if tp_sw else ('山寨幣移動停利' if alt_trail else ('追蹤止盈備援' if trail else '超時平倉'))))
                 close_pos(exchange, symbol, positions, reason)
         except Exception as e:
             print(f"  ⚠️ 檢查倉位 {symbol} 失敗: {e}")
@@ -1603,7 +1614,7 @@ def main():
 
     print("=" * 60)
     print("  莊家幣監控 + 自動交易啟動")
-    print(f"  山寨: ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.1%}  TP {TP_PCT:.0%}")
+    print(f"  山寨: ${MARGIN_USDT}×{LEVERAGE}x  SL {STOP_LOSS_PCT:.1%}  TP天花板 {TP_PCT:.0%}  移動停利 獲利{ALT_TRAIL_ACTIVATE_PCT:.0%}後回落{ALT_TRAIL_BACK_PCT:.1%}出場")
     print(f"  主流: ${MARGIN_USDT}×{MAJOR_LEVERAGE}x  SL {MAJOR_SL_PCT:.1%}  TP {MAJOR_TP_PCT:.0%}  備援 {TRAILING_PCT:.0%}")
     print(f"  最多 {MAX_POSITIONS} 個倉位  門檻 {MIN_SIGNALS}/4 個信號")
     print("=" * 60)

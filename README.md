@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-16 02:04 +08
+> Last updated: 2026-08-16 17:04 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/16 策略調整（山寨幣新增移動停利，因應盈虧比分析）**：使用者詢問為何整體盈虧比一直上不去，經統計全歷史 516 筆交易發現：勝率 34.5%、平均賺 87.66U/平均賠 -42.88U（賺賠比 2.04），但 Profit Factor 僅 1.08——因為山寨幣/主流幣皆採固定 1:2 風報比（山寨 SL 3.5%/TP 7%、主流 SL 1%/TP 2%），該比例的數學打平勝率是 33.3%，現行 34.5% 只比打平線高 1.2 個百分點，且拆解後絕大多數輸贏都是「完整吃到固定 SL 或完整吃到固定 TP」，代表訊號進場後行情走勢好壞是二分結果，沒有讓大波動單子額外多賺的機制。同時發現既有的 `TRAILING_PCT=15%` 移動停利備援在主流與山寨幣身上都近乎打不到（固定 TP 遠比 15% 回落門檻更緊，行情根本來不及漲到「回落 15% 都還沒觸發 TP」的程度；歷史 516 筆中唯一 1 筆「追蹤止盈備援」還是舊版程式碼的殘留紀錄，非現行邏輯產生）。→ 使用者選擇方案：**為山寨幣新增獨立的移動停利機制**——`TP_PCT` 固定止盈天花板由 7% 拉高至 **15%**（讓出空間），新增 `ALT_TRAIL_ACTIVATE_PCT=4%`（獲利達 4% 後開始追蹤最高點）與 `ALT_TRAIL_BACK_PCT=2.5%`（啟動後從最高點回落 2.5% 即出場鎖利），邏輯寫在 `check_positions()` 內、與既有保本止損機制並存不衝突。主流幣參數與既有 `TRAILING_PCT` 備援機制維持不動（本次僅調整山寨幣）。已 `ast.parse` 驗證通過。
 - **8/14（補記，第四輪，飛揚，Whisper 第六輪重試成功）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：8/14 晚間影片延遲多輪後才轉錄成功，內容為 63,400-63,600 進場 BTC 空單(至 618 位 62,800/62,200 出局)與 ETH 1900 壓制空單的詳細回顧，皆為 8/15 已報告過同一波交易之前情補記，無新資訊。→ **不改任何常數**：所有價位完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE`-`ETH_RESISTANCE_ZONE` 框架內。**git 同步未重啟、發 TG(簡短)**（延續 8/15 第二輪監看重點，本輪無新增）
 - **8/15（第二輪，飛揚，8/14影片第四次轉錄仍失敗）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：週末無行情，會員頻道 BTC 空單於 **62,800**/**63,200**(618/113 費波位)區間操作皆兌現浮盈，與同日第一輪報告觀察一致。ETH 持續圍繞 1845-1950 寬幅震盪已至極限，判斷沒有做多價值，今晚壓制看 1885-1895 僅 10 點空間，月線反彈需求後仍傾向續跌(此前已多輪提及)。→ **不改任何常數**：BTC 操作區間與 ETH 震盪觀察皆完全落在現行 `BTC_SUPPORT_ZONE`/`ETH_SUPPORT_ZONE-ETH_RESISTANCE_ZONE` 之間；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚 8/14 影片轉錄失敗持續留待重試;ETH 能否守住 1885-1895 或突破 1900 上方;BTC 空單週末是否出場★）
 - **8/16 bug fix（`_reconcile_orphans` 僅容器啟動時執行一次，中途 -1007 逾時孤兒倉永遠無 SL/TP 保護）**：使用者回報有 3 個倉位但只有 4 張 SL/TP 掛單（應為 6 張）。查證交易所實際持倉為 BTC LONG(0.0202)/SOL SHORT/WAL LONG 共 3 筆，但 `positions_altcoin.json` 只追蹤 SOL、WAL；BTC 完全未被本地記錄，且交易所上此刻**零**張 STOP_MARKET/TAKE_PROFIT_MARKET 掛單——BTC 倉位處於完全無保護狀態。追查 log 發現該 BTC 倉位源自開倉時 `-1007 Timeout waiting for response from backend server` 逾時（訂單其實已成交，但當下 `open_pos()` 判定失敗並放棄），而 `_reconcile_orphans()`（接管未追蹤孤兒倉、補掛 SL/TP 的機制）只在 `main()` 迴圈啟動前呼叫一次（monitor_coins.py:1613），容器已連續運行 3 天未重啟，此 -1007 逾時發生在啟動之後，孤兒倉因此從未被撿回。修法：將 `_reconcile_orphans(exchange_priv, positions)` 移入 `scan()` 每輪掃描開頭執行（monitor_coins.py:1499），讓孤兒倉偵測從「僅開機一次」變成「每 15 分鐘持續巡邏」。已 `ast.parse` 驗證通過；重啟後 `_reconcile_orphans` 會立即接管现有的 BTC 孤兒倉並補掛 SL/TP。
