@@ -869,6 +869,21 @@ def open_pos(exchange, symbol, direction, positions, n_signals=3):
         ref_price = float(last_price)
         margin    = MARGIN_BY_SIGNALS.get(n_signals, MARGIN_USDT)
         amount    = round(margin * lev / ref_price, 4)
+
+        # 限價逾時會改市價單，而 Binance 的 MARKET_LOT_SIZE 上限往往遠低於 LOT_SIZE
+        # （例如 PORTAL：LIMIT 上限 100 萬、MARKET 上限僅 3 萬）；若不先限縮，市價回退
+        # 會直接吃 -4005「Quantity greater than max quantity」導致整筆訊號開倉失敗
+        for f in (exchange.markets.get(symbol) or {}).get('info', {}).get('filters', []):
+            if f.get('filterType') == 'MARKET_LOT_SIZE':
+                try:
+                    market_lot_max = float(f['maxQty'])
+                except (KeyError, TypeError, ValueError):
+                    break
+                if amount > market_lot_max:
+                    print(f"  ⚠️ {symbol} 數量 {amount} 超過市價單上限 {market_lot_max:g}，已限縮")
+                    amount = round(market_lot_max, 4)
+                break
+
         sl_side   = 'sell' if direction == 1 else 'buy'
 
         price = _enter_position(exchange, symbol, direction, amount)
