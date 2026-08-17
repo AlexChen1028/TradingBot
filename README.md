@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-18 03:14 +08
+> Last updated: 2026-08-18 03:53 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/17（第四輪，飛揚，單片，ETH 重點）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：ETH 15 分鐘走出頭肩底，明確確認昨晚 1885-1895 壓制僅適用週末、新的一週不適用，今日（週一）果然突破。日線大陽線但仍未完全突破此前已報告的 **1845-1945** 既有寬幅震盪區，新標註壓制 **1900-1925**（日線上軌）、支撐 **1880-1860**。月線仍傾向高空思路（EMA 死亡三角缺口約 2060），週線先看低多。另評 SNDK（非核心監控幣種）看好，ZEC 為互動提問非明確表態。→ **不改任何常數**：所有價位皆完全落在現行 `ETH_SUPPORT_ZONE (1,810-1,850)` 延伸範圍與 `ETH_RESISTANCE_ZONE (1,948-2,030)` 下緣之間的既有寬幅震盪框架內；1885-1895 突破屬飛揚自身條件式表態（僅適用週末）的預期兌現，非未預期新事件；本輪僅飛揚單一 KOL；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:ETH 能否突破 1900-1925 測試震盪區上緣，或回落 1880-1860 支撐★）
 - **8/18 bugfix（`open_pos` 市價回退未限縮數量，撞 Binance MARKET_LOT_SIZE 上限 -4005，多幣種訊號靜默開倉失敗）**：每日健檢查 24h log 發現 `❌ 開倉失敗 PORTAL/USDT:USDT: binance {"code":-4005,"msg":"Quantity greater than max quantity."}`。追查全部歷史 log，同一錯誤已出現 **203 次**，涉及 PORTAL、ACE、KAITO、RONIN、SAGA、NFP、ALT 等多個低價山寨幣。根因：`open_pos()` 計算的 `amount = margin × 槓桿 / 現價` 只用 `round(...,4)`，未檢查交易所數量上限；限價單走的是 `LOT_SIZE` 濾網（上限通常很高，例如 PORTAL 為 100 萬），但限價逾時（`LIMIT_ORDER_TIMEOUT`）後會改市價單，市價單走的是 `MARKET_LOT_SIZE` 濾網、上限常常小得多（PORTAL 僅 3 萬、KAITO 僅 500），計算出的數量一旦超過這個更嚴格的上限，市價回退就直接被交易所拒絕（-4005），導致整筆有效訊號靜默開倉失敗（無 Telegram 提示、無錯誤累積告警，只在 log 裡安靜出現）。修法：在 `open_pos()` 算出 `amount` 後，讀取 `exchange.markets[symbol]['info']['filters']` 找出 `MARKET_LOT_SIZE.maxQty`，若 `amount` 超過則限縮到該上限再往下走（`exchange.markets` 已在啟動時載入，無需額外 API call）。已 `ast.parse` 驗證通過；此為對交易所限制的正確處理（開小一點的倉位），不影響風險參數本身。
 
 - **8/17（第三輪，龐克，單片）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 現價 6 萬 4 一線、延續近兩月縮小版震盪收斂，週 K 收出更高低點，判斷週末低流動性下的無波動 K 線屬做市商機械式震盪。死寂抄底區流動性指標由上週 0.3 降至 **0.21**，預估 3 週內（9 月中）進入，窗口約 1.5 個月；四年週期天數比對（~1400 天，18/22 年皆在此附近出現終極一跌）提醒終極一跌條件式可能性仍在，但賣方衰竭指數已達近十年最低（低於 18/22 年熊末），判斷史上籌碼最集中、散戶籌碼近枯竭。今日鏈上小額持有人買入、大鯨魚賣出，動靜小。→ **不改任何常數**：現價 6 萬 4 完全落在現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 與 `BTC_RESISTANCE_ZONE (68,000-71,000)`[COSMETIC] 之間，死寂抄底區推演為既有敘事(8/13-8/14 已報告)的進度更新、非新事件；本輪僅龐克單一 KOL；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:死寂抄底區流動性指標是否持續下降;BTC 能否延續 62,000-64,000 區間縮小版震盪或選邊突破★）
