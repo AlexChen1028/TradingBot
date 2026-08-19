@@ -41,6 +41,9 @@ def _download_audio(video_id, dest_dir):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
+        # 預設的 android_vr client 需要 PO Token（YouTube 反爬機制），沒有 token
+        # provider 時下載連結一律 403；android client 不受此限制，改用它
+        'extractor_args': {'youtube': {'player_client': ['android']}},
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
