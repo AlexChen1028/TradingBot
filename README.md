@@ -3,7 +3,7 @@
 ML-powered crypto futures trading bot for BTC, ETH, SOL and altcoins.  
 Runs 24/7 on a VPS via Docker, sends all notifications to Telegram.
 
-> Last updated: 2026-08-19 20:51 +08
+> Last updated: 2026-08-19 21:05 +08
 
 ---
 
@@ -416,6 +416,7 @@ Note: Ghost positions (0 quantity, negative margin) left after Demo liquidation 
 ## Changelog
 
 ### 2026-06-21（KOL 共識套用：ETH 高空帶下修 + BTC 支撐上移）
+- **8/19（飛揚＋歐陽，三支延遲多輪影片因修復 YouTube 403 終於轉錄成功）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 觸及 **65,000** 未能有效突破、日線收陰回落。飛揚空單於 65,000 止損（結束 8 連勝，累計 19 單 15 勝 4 負），判斷多頭尚未徹底獲勝、止損後暫不追空，4 小時支撐看 **64,000**/**63,600-63,800**。歐陽重申 **62,000-63,000**/**63,500-63,800** 兩段多單框架完整兌現（皆已於 64,500/65,000 完成指引），明確轉向：後續不再接多、改看 **65,000-67,000**（雙頂結構）做空區間，66,000 作中長線空單布局位。ETH 延續 **1905-1925** 既有壓制框架，1880-1895 支撐不變。→ **不改任何常數**：所有價位皆完全落在現行 `BTC_SUPPORT_ZONE (62,000-63,500)` 延伸範圍與 `BTC_RESISTANCE_ZONE (68,000-71,000)`[COSMETIC] 既有框架內；歐陽做空區間規劃與飛揚止損判斷互為印證（皆認為 65,000 未突破），非新結構反轉；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:BTC 能否守住 64,000/63,600-63,800 支撐或測試 65,000-67,000 壓力區;ETH 能否守住 1880-1895★）
 - **8/19 bugfix（`scripts/kol_whisper.py` YouTube 403：`android_vr` player client 需要 PO Token，未設定 provider 時下載一律被拒）**：飛揚/歐陽（皆關閉原生字幕、全靠 Whisper 後備轉錄）的多支影片連續 8 小時以上轉錄失敗，`yt-dlp` 報 `HTTP Error 403: Forbidden`。先確認並非版本過舊（升級 `yt-dlp` 2026.6.9→2026.7.4 後問題依舊），改用 `-v` 詳細輸出定位到根因：yt-dlp 預設選用的 `android_vr` player client 會走 YouTube 的 PO Token（Proof-of-Origin，反爬蟲）驗證，本機未配置 PO Token provider（`[youtube] [pot] PO Token Providers: none`），該 client 拿到的 `googlevideo.com` 下載連結一律 403。逐一測試 `tv`（DRM 保護，不可用）、`web`/`ios`/`mweb`（回報 format not available）、`android`（**成功下載**）等 player client，確認 `android` 這個 legacy client 不受此限制。修法：在 `_download_audio()` 的 `yt-dlp` opts 加上 `'extractor_args': {'youtube': {'player_client': ['android']}}`，強制走 `android` client。已用一支卡住 8 小時的影片（`FN-2GgrUhkg`）實測驗證：下載成功、Whisper 轉錄出 1962 字文字稿。`scripts/kol_whisper.py`/`kol_fetch.py` 只在本機執行（VPS 上有檔案但無 cron 排程），故僅 push 同步、不需重啟任何服務。
 - **8/18（龐克，單片；飛揚/歐陽同日影片持續轉錄失敗待重試）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：BTC 收復 **64,000** 關鍵位，延續高點降低/低點提高的收斂末端型態，若守住 64,000 之上則期待突破 65,500 後挑戰 **68,000-71,000**（與 8/17 第三輪一致）。本輪主題為資產配置心法：以「BTC vs 美股大盤每日勝率」數據對比（近一年 BTC 勝率僅剩三成多、類似 22 年熊末）論證低勝率期正是 BTC 最佳買入時機；重申個人歷史操作（98,000 清倉多單、59,000-60,000 買入六成現貨、今年 2-3 月將 30% 黃金部位換入 BTC）；提出條件式未來構想：若美股續漲且 BTC 出現「終極震倉」到罕見低位，會考慮部分換倉回 BTC（非 all-in、未觸發）。→ **不改任何常數**：64,000/65,500/68,000-71,000 皆完全落在現行 `BTC_SUPPORT_ZONE` 延伸範圍與 `BTC_RESISTANCE_ZONE (68,000-71,000)`[COSMETIC] 既有框架內；資產配置心法與條件式未來構想皆非交易訊號；本輪僅龐克單一 KOL；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:飛揚/歐陽 8/18 影片轉錄失敗持續留待重試;BTC 能否守住 64,000 之上並突破 65,500★）
 - **8/17（第四輪，飛揚，單片，ETH 重點）★純重申、參數不變、未重啟、SHORT_BIAS 維持 False★**：ETH 15 分鐘走出頭肩底，明確確認昨晚 1885-1895 壓制僅適用週末、新的一週不適用，今日（週一）果然突破。日線大陽線但仍未完全突破此前已報告的 **1845-1945** 既有寬幅震盪區，新標註壓制 **1900-1925**（日線上軌）、支撐 **1880-1860**。月線仍傾向高空思路（EMA 死亡三角缺口約 2060），週線先看低多。另評 SNDK（非核心監控幣種）看好，ZEC 為互動提問非明確表態。→ **不改任何常數**：所有價位皆完全落在現行 `ETH_SUPPORT_ZONE (1,810-1,850)` 延伸範圍與 `ETH_RESISTANCE_ZONE (1,948-2,030)` 下緣之間的既有寬幅震盪框架內；1885-1895 突破屬飛揚自身條件式表態（僅適用週末）的預期兌現，非未預期新事件；本輪僅飛揚單一 KOL；未宣告趨勢反轉，SHORT_BIAS 重新武裝條件依舊未觸及。**git 同步未重啟、發 TG**（★下一輪最高優先監看:ETH 能否突破 1900-1925 測試震盪區上緣，或回落 1880-1860 支撐★）
