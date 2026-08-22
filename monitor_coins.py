@@ -51,8 +51,7 @@ BTC_HARD_STOP       = 69_150            # 站上 69,138 大級別關鍵位才轉
 # ETH 高空帶（2026-08-21 更新）— 舊帶 1,948-2,030（7/27 反彈三次高點強壓區）已於本輪突破爆量上攻中被穿越：歐陽 8/20-8/21 實單持倉（1,900 進場/2,100 出場/2,260 加碼，8/21 現價已達 2,357）全程確認突破，與飛揚 8/20 前瞻數字構成雙 KOL 交叉印證
 ETH_RESISTANCE_ZONE = (2_300, 2_400)  # 高空帶（2026-08-21：飛揚 8/20 獨立標記 2,300-2,320 整數關口+1618費波壓制、2,400 關鍵位（若攻克看 2,800）；歐陽 8/21 獨立實單/持倉追蹤確認現價 2,357 恰落此區間內，雙KOL交叉印證同一已實現價格帶）；未到此帶不追空
 ETH_SUPPORT_ZONE    = (1_810, 1_850)  # 2026-08-01 更新：舊帶 1,900-1,930 已被跌破——歐陽 8/1 公開策略實單於 1,903 進場空單、一路拿到 1,846 平倉分批指盈，並標注下一觀察支撐 1,810；飛揚 8/1 獨立確認 ETH 最低探至 1,847、收線收回 1,850 之上，反彈受制 1,900(886費波)壓制，兩者同日互相印證同一次已發生跌破；1,900-1,930 由支撐翻轉為中繼壓力區（未達 ETH_RESISTANCE_ZONE 前的第一道壓制）
-ETH_LONG_ZONE       = (1_800, 1_820)  # 接多僅限強支撐帶（2026-07-18 自 1,850-1,900 下移：接多論點連兩次止損瓦解、飛揚不站多頭僅剩支撐帶承接；跌破後 1,750＝飛揚下個接多位）；做多僅此區 ±1% 放行（≤1,838 不追漲），同區禁空（深破 <1,782 才放行追空＝防插針掃損）
-ETH_NO_LONG_ABOVE   = 1_860           # 1,860 以上不追多（飛揚：站上 1,860＝1h EMA55 才算反彈開啟、屆時再評估）
+# 2026-08-22 移除 ETH_LONG_ZONE(1,800-1,820)/ETH_NO_LONG_ABOVE(1,860)：2026-07 熊市結構殘留常數（悲觀二探區僅放行接多），現價已遠高於此區間且多輪 KOL 一致轉多（ETH_SUPPORT_ZONE/RESISTANCE_ZONE 已上修多次、SHORT_BIAS=False），導致 ETH 多單訊號被全數誤擋，與現行看多共識脫節，故移除；改與其他主流幣一致，僅受通用 SHORT_BIAS/RSI/EMA50 趨勢閘門管控
 # SOL 關鍵區間（2026-07-02 飛揚更新）— SOL 月線 TD9 反轉、自 60 反彈至 80，僅正常修復需求；生死線分水嶺 100-120，反彈不破 100 問題不大
 SOL_RESISTANCE_ZONE = (100, 120)      # 高空進場帶／生死線（飛揚 7/2：100-120 才是 SOL 真正分水嶺、到此再空；不值得空 SOL、80=日線分水嶺勿追涨）[COSMETIC/未接線]
 SOL_SUPPORT_ZONE    = (60, 75)        # 支撐帶（飛揚 7/2：週線 886/2618=60-75、守 60；逢低接多至 75，80 以上勿追涨）；地板追空 R:R 差、此區禁空，逢低放行做多
@@ -1550,22 +1549,13 @@ def scan(exchange_pub, exchange_priv, watch_coins, positions, market_bias=0):
             if d == 1 and SHORT_BIAS and symbol in set(WATCH_ALWAYS) and result['n'] < min_sig + 1:
                 print(f"  📉 SHORT_BIAS: {symbol.split('/')[0]} LONG 信號不足（需 {min_sig+1}，有 {result['n']}），跳過")
                 continue
-            # ETH 弱勢專屬閘門（2026-07-06：ETH 觸 1,808 雙頂回落 1,706，高空帶 1,780-1,800、支撐/低多帶上移 1,700-1,720；1,720-1,780 突破多頭區禁追空防軋空；破 1,700 放行追空（飛揚：跌破 1,700-1,702 才追空）；做多仍僅悲觀二探 1,370-1,390，大結構偏空不追多）
+            # ETH 專屬閘門（2026-08-22：移除已失效的「悲觀二探區」多單限制，詳見上方 ETH_SUPPORT_ZONE 註解；ETH 做多改與其他主流幣一致，僅受下方通用 SHORT_BIAS/RSI/EMA50 趨勢閘門管控）
             if symbol == 'ETH/USDT:USDT':
                 px = result['price']
-                # 做多：弱勢，僅在悲觀二探區 1,370-1,390 放行（其餘一律不做多）
-                if d == 1 and px > ETH_LONG_ZONE[1] * 1.01:
-                    why = "弱勢禁多" if px >= ETH_NO_LONG_ABOVE else f"未到悲觀二探區 {ETH_LONG_ZONE[0]:,}-{ETH_LONG_ZONE[1]:,}"
-                    print(f"  🚫 ETH 做多跳過（{why}，現價 {px:,.0f}）")
-                    continue
-                # 做空：禁止空在支撐（悲觀二探區 1,370-1,390 或 深支撐帶 1,600-1,640）
-                if d == -1 and ETH_LONG_ZONE[0] * 0.99 <= px <= ETH_LONG_ZONE[1] * 1.01:
-                    print(f"  🛑 ETH 在悲觀二探區 {ETH_LONG_ZONE[0]:,}-{ETH_LONG_ZONE[1]:,}（現價 {px:,.0f}），預期插針反彈，禁空")
-                    continue
                 if d == -1 and ETH_SUPPORT_ZONE[0] <= px <= ETH_SUPPORT_ZONE[1]:
                     print(f"  🛑 ETH 在深支撐帶 {ETH_SUPPORT_ZONE[0]:,}-{ETH_SUPPORT_ZONE[1]:,}（現價 {px:,.0f}），未跌破嚴禁追空")
                     continue
-                # 做空：突破支撐後的多頭區（1,720-1,780），未到高空帶 1,780-1,800 不追空（2026-07-06 觸 1,808 雙頂回落、多頭仍強防軋空；飛揚：跌破 1,700-1,702 才追空、1,800 才高空）
+                # 做空：突破支撐後的多頭區，未到高空帶不追空（防軋空）
                 if d == -1 and ETH_SUPPORT_ZONE[1] < px < ETH_RESISTANCE_ZONE[0]:
                     print(f"  🛑 ETH 在突破多頭區（{ETH_SUPPORT_ZONE[1]:,}-{ETH_RESISTANCE_ZONE[0]:,}，現價 {px:,.0f}），未到高空帶 {ETH_RESISTANCE_ZONE[0]:,}-{ETH_RESISTANCE_ZONE[1]:,}，不追空")
                     continue
